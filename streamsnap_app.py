@@ -476,8 +476,86 @@ def get_working_proxy():
     print("⚠️ No working proxies found, proceeding without proxy")
     return None
 
+def get_video_info_youtube_api(video_id):
+    """Fallback: Get video info using YouTube Data API v3 when yt-dlp fails."""
+    import requests
+    
+    api_key = os.getenv('YOUTUBE_API_KEY')
+    if not api_key:
+        raise Exception("YouTube API key not configured. Set YOUTUBE_API_KEY environment variable.")
+    
+    try:
+        # Get video details
+        url = f"https://www.googleapis.com/youtube/v3/videos"
+        params = {
+            'part': 'snippet,contentDetails,statistics',
+            'id': video_id,
+            'key': api_key
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get('items'):
+            raise Exception("Video not found or private")
+            
+        video = data['items'][0]
+        snippet = video['snippet']
+        details = video['contentDetails']
+        stats = video['statistics']
+        
+        # Parse duration (PT4M13S format)
+        duration_str = details.get('duration', 'PT0S')
+        duration = parse_youtube_duration(duration_str)
+        
+        return {
+            'title': snippet.get('title', 'Unknown Title'),
+            'duration': duration,
+            'thumbnail': snippet.get('thumbnails', {}).get('maxres', {}).get('url') or 
+                        snippet.get('thumbnails', {}).get('high', {}).get('url'),
+            'view_count': int(stats.get('viewCount', 0)),
+            'upload_date': snippet.get('publishedAt', '').replace('-', '').replace('T', '').split('.')[0] + '00',
+            'description': snippet.get('description', ''),
+            'subtitles': {},  # API doesn't provide subtitles directly
+            'automatic_captions': {},
+            'chapters': []  # API doesn't provide chapters directly
+        }
+    except Exception as e:
+        raise Exception(f"YouTube API error: {str(e)}")
+
+def parse_youtube_duration(duration_str):
+    """Parse YouTube API duration format (PT4M13S) to seconds."""
+    import re
+    
+    pattern = r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?'
+    match = re.match(pattern, duration_str)
+    
+    if not match:
+        return 0
+        
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    
+    return hours * 3600 + minutes * 60 + seconds
+
 def get_video_info(url):
-    """Extract video information using yt-dlp with improved error handling."""
+    """Extract video information using yt-dlp with YouTube API fallback."""
+    # Extract video ID for potential API fallback
+    video_id = None
+    if 'youtube.com/watch?v=' in url or 'youtu.be/' in url:
+        import re
+        patterns = [
+            r'(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                break
+    
     try:
         ydl_opts = {
             'quiet': True,
