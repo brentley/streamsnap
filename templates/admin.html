@@ -1,0 +1,523 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - StreamSnap Configuration{% endblock %}
+
+{% block head %}
+<style>
+.admin-container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 2rem;
+}
+
+.admin-header {
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    color: white;
+    padding: 2rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.admin-title {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.admin-subtitle {
+    opacity: 0.9;
+}
+
+.config-section {
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+}
+
+.section-title {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 0.5rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    font-size: 1rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(17, 109, 248, 0.1);
+}
+
+.form-checkbox {
+    margin-right: 0.5rem;
+}
+
+.form-description {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.save-button {
+    background: var(--primary-color);
+    color: white;
+    padding: 1rem 2rem;
+    border: none;
+    border-radius: var(--border-radius);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    width: 100%;
+}
+
+.save-button:hover {
+    background: #0d5dd1;
+}
+
+.flash-messages {
+    margin-bottom: 2rem;
+}
+
+.flash-message {
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 1rem;
+}
+
+.flash-success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.flash-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.env-override-note {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 2rem;
+    font-size: 0.875rem;
+}
+
+.nav-link {
+    display: inline-block;
+    background: var(--primary-color);
+    color: white;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    border-radius: var(--border-radius);
+    margin-bottom: 2rem;
+    transition: background-color 0.2s;
+}
+
+.nav-link:hover {
+    background: #0d5dd1;
+    color: white;
+    text-decoration: none;
+}
+
+.two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 768px) {
+    .two-column {
+        grid-template-columns: 1fr;
+    }
+    
+    .admin-container {
+        padding: 1rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <a href="{{ url_for('index') }}" class="nav-link">← Back to StreamSnap</a>
+    
+    <div class="admin-header">
+        <h1 class="admin-title">⚙️ StreamSnap Configuration</h1>
+        <p class="admin-subtitle">Manage your AI video processing settings</p>
+    </div>
+
+    <div class="env-override-note">
+        <strong>Note:</strong> Environment variables will override these settings. 
+        Settings marked with environment variables will show the current effective value.
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ 'success' if category == 'success' else 'error' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('admin_save') }}">
+        <!-- AI Settings -->
+        <div class="config-section">
+            <h2 class="section-title">🤖 AI Configuration</h2>
+            
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="ai_settings_azure_openai_endpoint" class="form-label">Azure OpenAI Endpoint</label>
+                    <input type="url" 
+                           id="ai_settings_azure_openai_endpoint" 
+                           name="ai_settings_azure_openai_endpoint" 
+                           class="form-input"
+                           value="{{ config.ai_settings.azure_openai_endpoint }}"
+                           placeholder="https://your-resource.openai.azure.com/">
+                    <div class="form-description">Your Azure OpenAI service endpoint URL</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ai_settings_azure_openai_api_key" class="form-label">Azure OpenAI API Key</label>
+                    <input type="password" 
+                           id="ai_settings_azure_openai_api_key" 
+                           name="ai_settings_azure_openai_api_key" 
+                           class="form-input"
+                           value="{{ config.ai_settings.azure_openai_api_key }}"
+                           placeholder="Your API key">
+                    <div class="form-description">Keep this secure - it's your access key</div>
+                </div>
+            </div>
+
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="ai_settings_azure_openai_model" class="form-label">Azure OpenAI Model</label>
+                    <input type="text" 
+                           id="ai_settings_azure_openai_model" 
+                           name="ai_settings_azure_openai_model" 
+                           class="form-input"
+                           value="{{ config.ai_settings.azure_openai_model }}"
+                           placeholder="gpt-4">
+                    <div class="form-description">Model deployment name in Azure</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ai_settings_azure_openai_api_version" class="form-label">API Version</label>
+                    <input type="text" 
+                           id="ai_settings_azure_openai_api_version" 
+                           name="ai_settings_azure_openai_api_version" 
+                           class="form-input"
+                           value="{{ config.ai_settings.azure_openai_api_version }}"
+                           placeholder="2024-02-01">
+                    <div class="form-description">Azure OpenAI API version</div>
+                </div>
+            </div>
+
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="ai_settings_summary_length" class="form-label">Summary Length (words)</label>
+                    <input type="number" 
+                           id="ai_settings_summary_length" 
+                           name="ai_settings_summary_length" 
+                           class="form-input"
+                           value="{{ config.ai_settings.summary_length }}"
+                           min="50" max="1000">
+                    <div class="form-description">Target word count for summaries</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ai_settings_timestamp_threshold" class="form-label">Timestamp Threshold (seconds)</label>
+                    <input type="number" 
+                           id="ai_settings_timestamp_threshold" 
+                           name="ai_settings_timestamp_threshold" 
+                           class="form-input"
+                           value="{{ config.ai_settings.timestamp_threshold }}"
+                           min="5" max="300" step="0.1">
+                    <div class="form-description">Minimum gap between timestamps</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Processing Settings -->
+        <div class="config-section">
+            <h2 class="section-title">⚙️ Processing Settings</h2>
+            
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="processing_settings_max_video_duration" class="form-label">Max Video Duration (seconds)</label>
+                    <input type="number" 
+                           id="processing_settings_max_video_duration" 
+                           name="processing_settings_max_video_duration" 
+                           class="form-input"
+                           value="{{ config.processing_settings.max_video_duration }}"
+                           min="60" max="14400">
+                    <div class="form-description">Maximum allowed video length (3600 = 1 hour)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="processing_settings_chunk_size" class="form-label">Text Chunk Size</label>
+                    <input type="number" 
+                           id="processing_settings_chunk_size" 
+                           name="processing_settings_chunk_size" 
+                           class="form-input"
+                           value="{{ config.processing_settings.chunk_size }}"
+                           min="100" max="5000">
+                    <div class="form-description">Characters per processing chunk</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" 
+                           name="processing_settings_prefer_transcript" 
+                           class="form-checkbox"
+                           value="true"
+                           {% if config.processing_settings.prefer_transcript %}checked{% endif %}>
+                    Prefer Existing Transcripts
+                </label>
+                <div class="form-description">Use YouTube's transcript when available instead of downloading video</div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" 
+                           name="processing_settings_enable_whisper_transcription" 
+                           class="form-checkbox"
+                           value="true"
+                           {% if config.processing_settings.enable_whisper_transcription %}checked{% endif %}>
+                    Enable Whisper Audio Transcription
+                </label>
+                <div class="form-description">Use Azure OpenAI Whisper to transcribe audio when captions are unavailable (costs more tokens)</div>
+            </div>
+        </div>
+
+        <!-- Slack Settings -->
+        <div class="config-section">
+            <h2 class="section-title">📢 Slack Integration</h2>
+            
+            <div style="background: #e3f2fd; border: 1px solid #90caf9; border-radius: var(--border-radius); padding: 1.5rem; margin-bottom: 1.5rem;">
+                <h3 style="margin-top: 0; color: #1976d2;">🚀 How to Set Up Slack Canvas Integration</h3>
+                <ol style="margin: 0; padding-left: 1.5rem;">
+                    <li><strong>Create a Slack App:</strong> Go to <a href="https://api.slack.com/apps" target="_blank">api.slack.com/apps</a> and click "Create New App"</li>
+                    <li><strong>Choose "From scratch"</strong> and name your app (e.g., "StreamSnap Bot")</li>
+                    <li><strong>Add OAuth Scopes:</strong> Go to "OAuth & Permissions" and add these scopes:
+                        
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 1rem; margin: 0.5rem 0;">
+                            <strong>🔄 For Auto-Detection of YouTube Links:</strong>
+                            <ul style="margin: 0.5rem 0;">
+                                <li><code>chat:write</code> - Post messages to channels</li>
+                                <li><code>canvases:create</code> - Create Canvas documents</li>
+                                <li><code>canvases:write</code> - Edit Canvas documents</li>
+                                <li><code>channels:read</code> - View basic channel info</li>
+                                <li><code>channels:history</code> - <strong>Read messages to detect YouTube URLs</strong></li>
+                            </ul>
+                            <em>With these scopes, StreamSnap will automatically detect and process YouTube links posted in channels.</em>
+                        </div>
+                        
+                        <div style="background: #e3f2fd; border: 1px solid #90caf9; border-radius: 4px; padding: 1rem; margin: 0.5rem 0;">
+                            <strong>🎯 Alternative: Manual Trigger Only (No Auto-Detection):</strong>
+                            <ul style="margin: 0.5rem 0;">
+                                <li><code>chat:write</code> - Post messages to channels</li>
+                                <li><code>canvases:create</code> - Create Canvas documents</li>
+                                <li><code>canvases:write</code> - Edit Canvas documents</li>
+                                <li><code>channels:read</code> - View basic channel info</li>
+                            </ul>
+                            <em>Without channels:history, users must process videos via the web interface or slash commands.</em>
+                        </div>
+                    </li>
+                    <li><strong>Install to Workspace:</strong> Click "Install to Workspace" and authorize the app</li>
+                    <li><strong>Copy Bot Token:</strong> After installation, copy the "Bot User OAuth Token" (starts with <code>xoxb-</code>)</li>
+                    <li><strong>Get Channel ID:</strong> Right-click your target channel → "View channel details" → copy the Channel ID at the bottom</li>
+                    <li><strong>Get Signing Secret:</strong> Go to "Basic Information" and copy the "Signing Secret"</li>
+                    <li><strong>Invite Bot:</strong> In your Slack channel, type <code>/invite @StreamSnap</code> (or your bot name)</li>
+                </ol>
+                <p style="margin-bottom: 0; font-style: italic; color: #1976d2;">When enabled, StreamSnap will automatically create beautifully formatted Canvas documents with summaries, timestamps, and clickable links for every video processed!</p>
+            </div>
+            
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="slack_settings_bot_token" class="form-label">Bot Token</label>
+                    <input type="password" 
+                           id="slack_settings_bot_token" 
+                           name="slack_settings_bot_token" 
+                           class="form-input"
+                           value="{{ config.slack_settings.bot_token }}"
+                           placeholder="xoxb-...">
+                    <div class="form-description">Slack bot token (starts with xoxb-)</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="slack_settings_signing_secret" class="form-label">Signing Secret</label>
+                    <input type="password" 
+                           id="slack_settings_signing_secret" 
+                           name="slack_settings_signing_secret" 
+                           class="form-input"
+                           value="{{ config.slack_settings.signing_secret }}"
+                           placeholder="Your signing secret">
+                    <div class="form-description">Slack app signing secret for verification</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" 
+                           name="slack_settings_auto_detect_channels" 
+                           class="form-checkbox"
+                           value="true"
+                           {% if config.slack_settings.auto_detect_channels %}checked{% endif %}
+                           onchange="toggleChannelConfig(this)">
+                    🔍 Auto-detect channels (Process YouTube URLs from ANY channel bot is invited to)
+                </label>
+                <div class="form-description">When enabled, bot automatically processes YouTube URLs from any channel it's invited to. No manual channel configuration needed.</div>
+            </div>
+
+            <div id="manual-channel-config" style="{% if config.slack_settings.auto_detect_channels %}display: none;{% endif %}">
+                <div class="form-group">
+                    <label for="slack_settings_channel_id" class="form-label">Channel IDs (Manual Mode)</label>
+                    <input type="text" 
+                           id="slack_settings_channel_id" 
+                           name="slack_settings_channel_id" 
+                           class="form-input"
+                           value="{{ config.slack_settings.channel_id }}"
+                           placeholder="C1234567890,D01TAFFS076,C0987654321">
+                    <div class="form-description">
+                        Comma-separated channel IDs. Supports:
+                        <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                            <li><strong>Channels:</strong> C1234567890 (public/private channels)</li>
+                            <li><strong>DMs:</strong> D01TAFFS076 (direct messages with bot)</li>
+                            <li><strong>Multiple:</strong> C1234567890,D01TAFFS076,C0987654321</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                function toggleChannelConfig(checkbox) {
+                    const manualConfig = document.getElementById('manual-channel-config');
+                    if (checkbox.checked) {
+                        manualConfig.style.display = 'none';
+                    } else {
+                        manualConfig.style.display = 'block';
+                    }
+                }
+            </script>
+
+            <div class="form-group">
+                <label class="form-label">
+                    <input type="checkbox" 
+                           name="slack_settings_auto_process_urls" 
+                           class="form-checkbox"
+                           value="true"
+                           {% if config.slack_settings.auto_process_urls %}checked{% endif %}>
+                    Auto-create Canvas for processed videos
+                </label>
+                <div class="form-description">Automatically create and share Slack Canvas documents when videos are processed via API</div>
+            </div>
+            
+            <div style="background: #f3e5f5; border: 1px solid #ce93d8; border-radius: var(--border-radius); padding: 1rem; margin-top: 1rem;">
+                <strong>✨ Canvas Features:</strong>
+                <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                    <li>📄 Collapsible, formatted document with video summary</li>
+                    <li>🔗 Clickable timestamp links that jump to specific video moments</li>
+                    <li>📋 Professional formatting with sections and headers</li>
+                    <li>💬 Shared automatically in your chosen channel</li>
+                </ul>
+            </div>
+            
+            <div style="background: #f0f4f8; border: 1px solid #b0bec5; border-radius: var(--border-radius); padding: 1rem; margin-top: 1rem;">
+                <strong>🚀 Usage Modes:</strong>
+                <div style="margin: 0.5rem 0;">
+                    <strong>With channels:history scope:</strong>
+                    <ul style="margin: 0.25rem 0; padding-left: 1.5rem;">
+                        <li>✅ Auto-detects YouTube links posted in channels</li>
+                        <li>✅ Automatically processes and creates Canvas documents</li>
+                        <li>✅ No user action required beyond posting the link</li>
+                    </ul>
+                </div>
+                <div style="margin: 0.5rem 0;">
+                    <strong>Without channels:history scope:</strong>
+                    <ul style="margin: 0.25rem 0; padding-left: 1.5rem;">
+                        <li>🌐 Process videos via this web interface</li>
+                        <li>💬 Use slash commands: <code>/streamsnap https://youtube.com/...</code></li>
+                        <li>📢 Mention bot: <code>@StreamSnap https://youtube.com/...</code></li>
+                        <li>✅ Canvas still auto-created when "Auto-create Canvas" is enabled</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- UI Settings -->
+        <div class="config-section">
+            <h2 class="section-title">🎨 UI Settings</h2>
+            
+            <div class="two-column">
+                <div class="form-group">
+                    <label for="ui_settings_app_name" class="form-label">App Name</label>
+                    <input type="text" 
+                           id="ui_settings_app_name" 
+                           name="ui_settings_app_name" 
+                           class="form-input"
+                           value="{{ config.ui_settings.app_name }}"
+                           placeholder="StreamSnap">
+                    <div class="form-description">Display name for the application</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="ui_settings_brand_color" class="form-label">Brand Color</label>
+                    <input type="color" 
+                           id="ui_settings_brand_color" 
+                           name="ui_settings_brand_color" 
+                           class="form-input"
+                           value="{{ config.ui_settings.brand_color }}">
+                    <div class="form-description">Primary brand color</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="ui_settings_accent_color" class="form-label">Accent Color</label>
+                <input type="color" 
+                       id="ui_settings_accent_color" 
+                       name="ui_settings_accent_color" 
+                       class="form-input"
+                       value="{{ config.ui_settings.accent_color }}">
+                <div class="form-description">Secondary accent color</div>
+            </div>
+        </div>
+
+        <button type="submit" class="save-button">
+            💾 Save Configuration
+        </button>
+    </form>
+</div>
+{% endblock %}

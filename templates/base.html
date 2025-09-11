@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}StreamSnap - AI YouTube Video Summarizer{% endblock %}</title>
+    
+    <!-- Cache-busted CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ version_info.commit }}&t={{ version_info.build_date }}">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#116df8">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer with version info -->
+    <footer class="app-footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <span class="footer-brand">🎯 StreamSnap</span>
+                <span class="footer-tagline">AI-powered video insights</span>
+            </div>
+            <div class="footer-section">
+                <span class="footer-version">
+                    v{{ version_info.version }} 
+                    <span class="footer-commit">({{ version_info.commit }})</span>
+                </span>
+                <span class="footer-build">{{ version_info.build_date }}</span>
+            </div>
+        </div>
+    </footer>
+    
+    <!-- Cache-busted JavaScript -->
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ version_info.commit }}&t={{ version_info.build_date }}"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('{{ url_for("static", filename="sw.js") }}?v={{ version_info.commit }}&t={{ version_info.build_date }}')
+                .then(registration => console.log('SW registered'))
+                .catch(error => console.log('SW registration failed'));
+        }
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

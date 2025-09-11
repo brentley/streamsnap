@@ -13,6 +13,12 @@ openai_playground.py
 gemini_playground.ipynb
 openai_playground.ipynb
 
+# Build-generated files
+version_build.json
+
+# Environment variables
+.env
+
 # Distribution / packaging
 .Python
 build/

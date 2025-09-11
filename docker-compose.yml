@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   streamsnap:
-    image: ghcr.io/brentley/streamsnap:latest
+    build: .
     container_name: streamsnap
     restart: unless-stopped
     environment:
@@ -13,10 +13,11 @@ services:
       - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_MODEL=gpt-4o
+      - AZURE_OPENAI_API_VERSION=2025-01-01-preview
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
       - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
-    ports:
-      - "5000:5000"
+      - SLACK_CHANNEL_ID=${SLACK_CHANNEL_ID}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s

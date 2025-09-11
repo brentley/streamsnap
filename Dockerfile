@@ -23,6 +23,7 @@ ENV GIT_COMMIT=$GIT_COMMIT \
 RUN apt-get update && apt-get install -y \
     curl \
     ffmpeg \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -35,6 +36,12 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Generate version information during build
+RUN if [ -f scripts/generate-version.sh ]; then \
+        chmod +x scripts/generate-version.sh && \
+        ./scripts/generate-version.sh; \
+    fi
 
 # Create required directories
 RUN mkdir -p /app/config /app/logs && \
@@ -50,4 +57,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "streamsnap_app:app"]

@@ -21,6 +21,10 @@ test:
 	docker compose run --rm streamsnap python -m pytest tests/ -v
 
 build:
+	@echo "Generating version information..."
+	@mkdir -p scripts
+	@chmod +x scripts/generate-version.sh
+	@./scripts/generate-version.sh
 	@echo "Building StreamSnap Docker image..."
 	docker compose build
 

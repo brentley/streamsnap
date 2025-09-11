@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section">
+    <div class="hero-content">
+        <div class="hero-text">
+            <h1 class="hero-title">🎯 StreamSnap</h1>
+            <h2 class="hero-subtitle">Turn Any YouTube Video Into Smart Insights</h2>
+            <p class="hero-description">
+                Get AI-powered summaries, clickable timestamps, and full transcripts automatically. 
+                Perfect for busy professionals who need insights without the time investment.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Video Input Section -->
+<div class="input-section">
+    <div class="input-card">
+        <form id="video-form" class="video-form">
+            <div class="input-group">
+                <label for="youtube-url" class="input-label">YouTube URL</label>
+                <div class="input-wrapper">
+                    <input 
+                        type="url" 
+                        id="youtube-url" 
+                        name="url" 
+                        class="url-input"
+                        placeholder="https://youtube.com/watch?v=..."
+                        required
+                        autocomplete="off"
+                    >
+                    <button type="button" id="paste-btn" class="paste-btn" title="Paste from clipboard">
+                        📋
+                    </button>
+                </div>
+            </div>
+            
+            <div class="processing-info">
+                <div class="info-group">
+                    <label class="info-label">StreamSnap automatically generates all three:</label>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-icon">📝</div>
+                            <div class="info-content">
+                                <strong>AI Summary</strong>
+                                <small>Key insights in ~250 words</small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-item">
+                            <div class="info-icon">⏱️</div>
+                            <div class="info-content">
+                                <strong>Smart Timestamps</strong>
+                                <small>Clickable timeline of key moments</small>
+                            </div>
+                        </div>
+                        
+                        <div class="info-item">
+                            <div class="info-icon">📄</div>
+                            <div class="info-content">
+                                <strong>Full Transcript</strong>
+                                <small>Complete text with download</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit" class="submit-btn">
+                <span class="submit-text">Process Video</span>
+                <span class="submit-icon">⚡</span>
+            </button>
+            
+            <div class="admin-link-wrapper">
+                <a href="{{ url_for('admin') }}" class="admin-link">
+                    ⚙️ Configuration
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Video Preview Section -->
+<div id="video-preview" class="video-preview" style="display: none;">
+    <div class="preview-card">
+        <div class="video-info">
+            <img id="video-thumbnail" class="video-thumbnail" alt="Video thumbnail">
+            <div class="video-details">
+                <h3 id="video-title" class="video-title"></h3>
+                <div class="video-meta">
+                    <span id="video-duration" class="video-duration"></span>
+                    <span id="video-views" class="video-views"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Results Section -->
+<div id="results-section" class="results-section" style="display: none;">
+    <div class="results-card">
+        <div class="results-header">
+            <h3 id="results-title" class="results-title"></h3>
+            <div class="results-actions">
+                <button id="share-results" class="action-btn share-btn">
+                    <span class="btn-icon">🔗</span>
+                    Share
+                </button>
+            </div>
+        </div>
+        
+        <!-- Results Tabs -->
+        <div class="results-tabs">
+            <button class="results-tab active" data-tab="summary">
+                📝 Summary
+            </button>
+            <button class="results-tab" data-tab="timestamps">
+                ⏱️ Timestamps
+            </button>
+            <button class="results-tab" data-tab="transcript">
+                📄 Transcript
+            </button>
+        </div>
+        
+        <!-- Summary Results -->
+        <div id="summary-results" class="results-content tab-pane active">
+            <div class="section-header">
+                <h4 class="section-title">AI Summary</h4>
+                <div class="section-actions">
+                    <button class="action-btn copy-btn" data-type="summary">
+                        <span class="btn-icon">📄</span>
+                        Copy
+                    </button>
+                </div>
+            </div>
+            <div id="summary-content" class="content-area">
+                <!-- Summary content will be populated here -->
+            </div>
+        </div>
+        
+        <!-- Timestamps Results -->
+        <div id="timestamps-results" class="results-content tab-pane">
+            <div class="section-header">
+                <h4 class="section-title">Smart Timestamps</h4>
+                <div class="section-actions">
+                    <button class="action-btn copy-btn" data-type="timestamps">
+                        <span class="btn-icon">📄</span>
+                        Copy
+                    </button>
+                </div>
+            </div>
+            <div id="timestamps-content" class="content-area">
+                <!-- Timestamps content will be populated here -->
+            </div>
+        </div>
+        
+        <!-- Transcript Results -->
+        <div id="transcript-results" class="results-content tab-pane">
+            <div class="section-header">
+                <h4 class="section-title">Full Transcript</h4>
+                <div class="section-actions">
+                    <button class="action-btn copy-btn" data-type="transcript">
+                        <span class="btn-icon">📄</span>
+                        Copy
+                    </button>
+                    <button class="action-btn download-btn" data-type="transcript">
+                        <span class="btn-icon">⬇️</span>
+                        Download
+                    </button>
+                </div>
+            </div>
+            <div id="transcript-content" class="content-area">
+                <!-- Transcript content will be populated here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="features-section">
+    <h2 class="features-title">Why StreamSnap?</h2>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3 class="feature-title">Lightning Fast</h3>
+            <p class="feature-description">Smart transcript detection means faster processing - no unnecessary downloads.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🎯</div>
+            <h3 class="feature-title">Triple Output</h3>
+            <p class="feature-description">Every video automatically gets summary, timestamps, AND transcript.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🔗</div>
+            <h3 class="feature-title">Clickable Timestamps</h3>
+            <p class="feature-description">Jump directly to the most important moments in any video.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">📱</div>
+            <h3 class="feature-title">Mobile Optimized</h3>
+            <p class="feature-description">Works perfectly on all devices. Install as a PWA for quick access.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3 class="feature-title">Slack Integration</h3>
+            <p class="feature-description">Automatic processing with rich document responses in Slack.</p>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3 class="feature-title">Privacy First</h3>
+            <p class="feature-description">Smart processing minimizes data usage while maximizing insights.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize StreamSnap
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('StreamSnap v{{ version_info.version }} ({{ version_info.commit }}) initialized');
+    
+    // Add any page-specific JavaScript here
+    if (window.StreamSnapApp) {
+        window.StreamSnapApp.init();
+    }
+});
+</script>
+{% endblock %}
