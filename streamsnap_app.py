@@ -344,7 +344,12 @@ class OIDCAuthManager:
     def __init__(self):
         self.oauth_client = None
         self.config = None
-        self._initialize_oauth()
+        self._initialized = False
+    
+    def _ensure_initialized(self):
+        """Ensure OAuth client is initialized."""
+        if not self._initialized:
+            self._initialize_oauth()
     
     def _initialize_oauth(self):
         """Initialize OAuth client with current config."""
@@ -367,8 +372,10 @@ class OIDCAuthManager:
             )
             self.config = oidc_settings
             print(f"✅ OIDC OAuth client initialized for provider: {oidc_settings.get('provider_url')}")
+            self._initialized = True
         except Exception as e:
             print(f"⚠️ Failed to initialize OIDC OAuth client: {e}")
+            self._initialized = True  # Mark as initialized even on failure
     
     def is_enabled(self):
         """Check if OIDC authentication is enabled."""
@@ -388,6 +395,7 @@ class OIDCAuthManager:
     
     def get_auth_url(self, redirect_uri=None):
         """Generate authorization URL for OIDC flow."""
+        self._ensure_initialized()
         if not self.oauth_client:
             return None
             
@@ -396,6 +404,7 @@ class OIDCAuthManager:
     
     def exchange_code(self, code, redirect_uri=None):
         """Exchange authorization code for tokens and user info."""
+        self._ensure_initialized()
         if not self.oauth_client:
             return None
             
@@ -434,7 +443,7 @@ class OIDCAuthManager:
             session['tokens'] = token_info
             
             # Create/update user in user manager
-            if self.config.get('auto_create_users', True):
+            if self.config and self.config.get('auto_create_users', True):
                 user_manager.get_or_create_user(
                     user_info.get('sub'),
                     {
@@ -461,7 +470,7 @@ class OIDCAuthManager:
             
         # Check session timeout
         auth_time = user.get('authenticated_at', 0)
-        timeout = self.config.get('session_timeout', 86400)
+        timeout = self.config.get('session_timeout', 86400) if self.config else 86400
         
         if time.time() - auth_time > timeout:
             self.clear_session()
