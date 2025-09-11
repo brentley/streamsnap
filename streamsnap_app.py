@@ -4025,6 +4025,7 @@ def process_video_async(url, config, target_channel=None, message_ts=None, user_
             # Get user info from Slack if possible
             user_info = None
             try:
+                from slack_sdk import WebClient
                 slack_settings = config.get('slack_settings', {})
                 if slack_settings.get('bot_token'):
                     client = WebClient(token=slack_settings['bot_token'])
