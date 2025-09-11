@@ -278,6 +278,8 @@
     <button class="refresh-btn" onclick="checkSystemStatus()" style="background: #17a2b8;">🔍 System Status</button>
     <button class="refresh-btn" onclick="checkQueueStatus()" style="background: #28a745;">📥 Queue Status</button>
     <button class="refresh-btn" onclick="checkUserManagement()" style="background: #6f42c1;">👥 User Management</button>
+    <button class="refresh-btn" onclick="showOidcConfig()" style="background: #dc3545;">🔐 OIDC Config</button>
+    <button class="refresh-btn" onclick="showSlackConfig()" style="background: #4a154b;">💬 Slack Config</button>
 
     <!-- System Status Section -->
     <div class="section-card" id="system-status" style="display: none;">
@@ -305,6 +307,26 @@
             👥 User Management & Subscriptions
         </div>
         <div class="section-content" id="user-management-content">
+            <!-- Dynamic content loaded by JavaScript -->
+        </div>
+    </div>
+
+    <!-- OIDC Configuration Section -->
+    <div class="section-card" id="oidc-config" style="display: none;">
+        <div class="section-header">
+            🔐 OIDC Authentication Configuration
+        </div>
+        <div class="section-content" id="oidc-config-content">
+            <!-- Dynamic content loaded by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Slack Configuration Section -->
+    <div class="section-card" id="slack-config" style="display: none;">
+        <div class="section-header">
+            💬 Slack Integration Configuration
+        </div>
+        <div class="section-content" id="slack-config-content">
             <!-- Dynamic content loaded by JavaScript -->
         </div>
     </div>
@@ -769,6 +791,336 @@ function renderUserManagement(data) {
     html += '</div>';
     
     userContent.innerHTML = html;
+}
+
+// OIDC Configuration Management
+function showOidcConfig() {
+    const oidcSection = document.getElementById('oidc-config');
+    const oidcContent = document.getElementById('oidc-config-content');
+    
+    oidcSection.style.display = 'block';
+    oidcContent.innerHTML = '<p>⏳ Loading OIDC configuration...</p>';
+    
+    fetch('/api/admin/config/oidc')
+        .then(response => response.json())
+        .then(data => {
+            renderOidcConfig(data);
+        })
+        .catch(error => {
+            console.error('Error fetching OIDC config:', error);
+            oidcContent.innerHTML = '<p style="color: red;">❌ Error loading OIDC configuration</p>';
+        });
+}
+
+function renderOidcConfig(data) {
+    const oidcContent = document.getElementById('oidc-config-content');
+    
+    if (!data.success) {
+        oidcContent.innerHTML = '<p style="color: red;">❌ Failed to load OIDC configuration</p>';
+        return;
+    }
+    
+    const config = data.config;
+    
+    let html = `
+        <form id="oidc-config-form" style="max-width: 800px;">
+            <div style="display: grid; gap: 1.5rem;">
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="oidc-enabled" ${config.enabled ? 'checked' : ''}>
+                        Enable OIDC Authentication
+                    </label>
+                    <small style="color: var(--text-secondary);">When enabled, users must authenticate via SSO to access StreamSnap</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="oidc-provider-url">OIDC Provider URL</label>
+                    <input type="url" id="oidc-provider-url" class="form-input" 
+                           value="${config.provider_url}" placeholder="https://accounts.google.com">
+                    <small style="color: var(--text-secondary);">The base URL of your OIDC provider (e.g., Google, Azure AD, Okta)</small>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label class="form-label" for="oidc-client-id">Client ID</label>
+                        <input type="text" id="oidc-client-id" class="form-input" 
+                               value="${config.client_id}" placeholder="your-client-id">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="oidc-client-secret">Client Secret</label>
+                        <input type="password" id="oidc-client-secret" class="form-input" 
+                               placeholder="Leave blank to keep existing secret">
+                        <small style="color: var(--text-secondary);">Only enter if you want to update the existing secret</small>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="oidc-redirect-uri">Redirect URI</label>
+                    <input type="url" id="oidc-redirect-uri" class="form-input" 
+                           value="${config.redirect_uri}" placeholder="https://streamsnap.example.com/auth/callback">
+                    <small style="color: var(--text-secondary);">Must match the redirect URI configured in your OIDC provider</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="oidc-scopes">Scopes</label>
+                    <input type="text" id="oidc-scopes" class="form-input" 
+                           value="${config.scopes.join(' ')}" placeholder="openid email profile">
+                    <small style="color: var(--text-secondary);">Space-separated list of OAuth scopes</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label" for="oidc-admin-users">Admin Users</label>
+                    <textarea id="oidc-admin-users" class="form-textarea" rows="3"
+                              placeholder="admin@example.com&#10;user2@example.com">${config.admin_users.join('\\n')}</textarea>
+                    <small style="color: var(--text-secondary);">One email address per line. These users will have admin access.</small>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" id="oidc-auto-create" ${config.auto_create_users ? 'checked' : ''}>
+                            Auto-create users
+                        </label>
+                        <small style="color: var(--text-secondary);">Automatically create user records when they first authenticate</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label" for="oidc-session-timeout">Session Timeout (seconds)</label>
+                        <input type="number" id="oidc-session-timeout" class="form-input" 
+                               value="${config.session_timeout}" min="300" max="604800">
+                        <small style="color: var(--text-secondary);">How long users stay logged in (300 = 5 minutes, 86400 = 1 day)</small>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" onclick="testOidcConfig()" class="btn btn-secondary">🧪 Test Connection</button>
+                    <button type="button" onclick="saveOidcConfig()" class="btn btn-primary">💾 Save Configuration</button>
+                </div>
+                
+                <div id="oidc-status" style="margin-top: 1rem;"></div>
+            </div>
+        </form>
+    `;
+    
+    oidcContent.innerHTML = html;
+}
+
+function testOidcConfig() {
+    const statusDiv = document.getElementById('oidc-status');
+    statusDiv.innerHTML = '<p style="color: #007bff;">🧪 Testing OIDC connection...</p>';
+    
+    fetch('/api/admin/config/test-oidc', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let html = `<div style="color: green;">✅ ${data.message}</div>`;
+            if (data.provider_info) {
+                html += `
+                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.9rem;">
+                        <strong>Provider Info:</strong><br>
+                        <strong>Issuer:</strong> ${data.provider_info.issuer}<br>
+                        <strong>Supported Scopes:</strong> ${data.provider_info.scopes_supported ? data.provider_info.scopes_supported.join(', ') : 'N/A'}
+                    </div>
+                `;
+            }
+            statusDiv.innerHTML = html;
+        } else {
+            statusDiv.innerHTML = `<div style="color: red;">❌ ${data.error}</div>`;
+        }
+    })
+    .catch(error => {
+        statusDiv.innerHTML = `<div style="color: red;">❌ Network error: ${error.message}</div>`;
+    });
+}
+
+function saveOidcConfig() {
+    const statusDiv = document.getElementById('oidc-status');
+    statusDiv.innerHTML = '<p style="color: #007bff;">💾 Saving configuration...</p>';
+    
+    const formData = {
+        enabled: document.getElementById('oidc-enabled').checked,
+        provider_url: document.getElementById('oidc-provider-url').value,
+        client_id: document.getElementById('oidc-client-id').value,
+        client_secret: document.getElementById('oidc-client-secret').value,
+        redirect_uri: document.getElementById('oidc-redirect-uri').value,
+        scopes: document.getElementById('oidc-scopes').value.split(' ').filter(s => s.trim()),
+        admin_users: document.getElementById('oidc-admin-users').value.split('\\n').filter(u => u.trim()),
+        auto_create_users: document.getElementById('oidc-auto-create').checked,
+        session_timeout: parseInt(document.getElementById('oidc-session-timeout').value)
+    };
+    
+    fetch('/api/admin/config/oidc', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let message = `✅ ${data.message}`;
+            if (data.requires_restart) {
+                message += '<br><strong>Note:</strong> Some changes may require an application restart to take full effect.';
+            }
+            statusDiv.innerHTML = `<div style="color: green;">${message}</div>`;
+        } else {
+            statusDiv.innerHTML = `<div style="color: red;">❌ ${data.error}</div>`;
+        }
+    })
+    .catch(error => {
+        statusDiv.innerHTML = `<div style="color: red;">❌ Network error: ${error.message}</div>`;
+    });
+}
+
+// Slack Configuration Management
+function showSlackConfig() {
+    const slackSection = document.getElementById('slack-config');
+    const slackContent = document.getElementById('slack-config-content');
+    
+    slackSection.style.display = 'block';
+    slackContent.innerHTML = '<p>⏳ Loading Slack configuration...</p>';
+    
+    fetch('/api/admin/config/slack')
+        .then(response => response.json())
+        .then(data => {
+            renderSlackConfig(data);
+        })
+        .catch(error => {
+            console.error('Error fetching Slack config:', error);
+            slackContent.innerHTML = '<p style="color: red;">❌ Error loading Slack configuration</p>';
+        });
+}
+
+function renderSlackConfig(data) {
+    const slackContent = document.getElementById('slack-config-content');
+    
+    if (!data.success) {
+        slackContent.innerHTML = '<p style="color: red;">❌ Failed to load Slack configuration</p>';
+        return;
+    }
+    
+    const config = data.config;
+    
+    let html = `
+        <form id="slack-config-form" style="max-width: 800px;">
+            <div style="display: grid; gap: 1.5rem;">
+                <div class="form-group">
+                    <h4 style="margin-bottom: 0.5rem;">🔑 Authentication</h4>
+                    <div style="display: grid; gap: 1rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="slack-bot-token">Bot Token</label>
+                            <input type="password" id="slack-bot-token" class="form-input" 
+                                   placeholder="${config.bot_token_configured ? 'Token configured (enter to update)' : 'xoxb-your-bot-token'}">
+                            <small style="color: var(--text-secondary);">Your Slack app's Bot User OAuth Token</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label" for="slack-signing-secret">Signing Secret</label>
+                            <input type="password" id="slack-signing-secret" class="form-input" 
+                                   placeholder="${config.signing_secret_configured ? 'Secret configured (enter to update)' : 'Your signing secret'}">
+                            <small style="color: var(--text-secondary);">Your Slack app's Signing Secret for request verification</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <h4 style="margin-bottom: 0.5rem;">📺 Channel Settings</h4>
+                    <div style="display: grid; gap: 1rem;">
+                        <div class="form-group">
+                            <label class="form-label" for="slack-channel-id">Default Channel ID</label>
+                            <input type="text" id="slack-channel-id" class="form-input" 
+                                   value="${config.channel_id}" placeholder="C1234567890">
+                            <small style="color: var(--text-secondary);">The primary channel for Canvas posts and notifications</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" id="slack-auto-process" ${config.auto_process_urls ? 'checked' : ''}>
+                                Auto-process YouTube URLs
+                            </label>
+                            <small style="color: var(--text-secondary);">Automatically process YouTube links posted in channels</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" id="slack-auto-detect" ${config.auto_detect_channels ? 'checked' : ''}>
+                                Auto-detect new channels
+                            </label>
+                            <small style="color: var(--text-secondary);">Automatically discover and track new channels with YouTube activity</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <h4 style="margin-bottom: 0.5rem;">📊 Current Status</h4>
+                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                            <div>
+                                <strong>Bot Token:</strong> ${config.bot_token_configured ? '✅ Configured' : '❌ Not set'}
+                            </div>
+                            <div>
+                                <strong>Signing Secret:</strong> ${config.signing_secret_configured ? '✅ Configured' : '❌ Not set'}
+                            </div>
+                            <div>
+                                <strong>Discovered Channels:</strong> ${Object.keys(config.discovered_channels).length}
+                            </div>
+                            <div>
+                                <strong>Recent Activity:</strong> ${config.recent_activity_count} items
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" onclick="saveSlackConfig()" class="btn btn-primary">💾 Save Configuration</button>
+                </div>
+                
+                <div id="slack-status" style="margin-top: 1rem;"></div>
+            </div>
+        </form>
+    `;
+    
+    slackContent.innerHTML = html;
+}
+
+function saveSlackConfig() {
+    const statusDiv = document.getElementById('slack-status');
+    statusDiv.innerHTML = '<p style="color: #007bff;">💾 Saving configuration...</p>';
+    
+    const formData = {
+        channel_id: document.getElementById('slack-channel-id').value,
+        auto_process_urls: document.getElementById('slack-auto-process').checked,
+        auto_detect_channels: document.getElementById('slack-auto-detect').checked
+    };
+    
+    // Only include tokens if they're provided
+    const botToken = document.getElementById('slack-bot-token').value;
+    const signingSecret = document.getElementById('slack-signing-secret').value;
+    
+    if (botToken) formData.bot_token = botToken;
+    if (signingSecret) formData.signing_secret = signingSecret;
+    
+    fetch('/api/admin/config/slack', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusDiv.innerHTML = `<div style="color: green;">✅ ${data.message}</div>`;
+            // Refresh the form to show updated status
+            setTimeout(() => showSlackConfig(), 1000);
+        } else {
+            statusDiv.innerHTML = `<div style="color: red;">❌ ${data.error}</div>`;
+        }
+    })
+    .catch(error => {
+        statusDiv.innerHTML = `<div style="color: red;">❌ Network error: ${error.message}</div>`;
+    });
 }
 </script>
 {% endblock %}

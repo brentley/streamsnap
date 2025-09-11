@@ -1350,6 +1350,209 @@ def api_admin_users():
             'error': str(e)
         }), 500
 
+# Admin Configuration API Endpoints
+@app.route('/api/admin/config/oidc', methods=['GET'])
+@admin_required
+def api_admin_get_oidc_config():
+    """Get current OIDC configuration (admin only)."""
+    try:
+        config = load_config()
+        oidc_settings = config.get('oidc_settings', {})
+        
+        # Return configuration without sensitive data
+        safe_config = {
+            'enabled': oidc_settings.get('enabled', False),
+            'provider_url': oidc_settings.get('provider_url', ''),
+            'client_id': oidc_settings.get('client_id', ''),
+            'redirect_uri': oidc_settings.get('redirect_uri', ''),
+            'scopes': oidc_settings.get('scopes', ['openid', 'email', 'profile']),
+            'admin_users': oidc_settings.get('admin_users', []),
+            'auto_create_users': oidc_settings.get('auto_create_users', True),
+            'session_timeout': oidc_settings.get('session_timeout', 86400)
+        }
+        
+        return jsonify({
+            'success': True,
+            'config': safe_config
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/config/oidc', methods=['POST'])
+@admin_required
+def api_admin_update_oidc_config():
+    """Update OIDC configuration (admin only)."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        config = load_config()
+        oidc_settings = config.get('oidc_settings', {})
+        
+        # Update configuration fields
+        if 'enabled' in data:
+            oidc_settings['enabled'] = bool(data['enabled'])
+        if 'provider_url' in data:
+            oidc_settings['provider_url'] = str(data['provider_url']).strip()
+        if 'client_id' in data:
+            oidc_settings['client_id'] = str(data['client_id']).strip()
+        if 'client_secret' in data and data['client_secret']:
+            oidc_settings['client_secret'] = str(data['client_secret']).strip()
+        if 'redirect_uri' in data:
+            oidc_settings['redirect_uri'] = str(data['redirect_uri']).strip()
+        if 'scopes' in data and isinstance(data['scopes'], list):
+            oidc_settings['scopes'] = [str(s).strip() for s in data['scopes'] if s.strip()]
+        if 'admin_users' in data and isinstance(data['admin_users'], list):
+            oidc_settings['admin_users'] = [str(u).strip() for u in data['admin_users'] if u.strip()]
+        if 'auto_create_users' in data:
+            oidc_settings['auto_create_users'] = bool(data['auto_create_users'])
+        if 'session_timeout' in data:
+            try:
+                oidc_settings['session_timeout'] = max(300, int(data['session_timeout']))  # Minimum 5 minutes
+            except (ValueError, TypeError):
+                pass
+        
+        config['oidc_settings'] = oidc_settings
+        save_config(config)
+        
+        # Reinitialize OAuth client with new settings
+        auth_manager._initialize_oauth()
+        
+        return jsonify({
+            'success': True,
+            'message': 'OIDC configuration updated successfully',
+            'requires_restart': oidc_settings.get('enabled', False)  # May need restart for OAuth client
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/config/slack', methods=['GET'])
+@admin_required
+def api_admin_get_slack_config():
+    """Get current Slack configuration (admin only)."""
+    try:
+        config = load_config()
+        slack_settings = config.get('slack_settings', {})
+        
+        # Return configuration without sensitive data
+        safe_config = {
+            'channel_id': slack_settings.get('channel_id', ''),
+            'auto_process_urls': slack_settings.get('auto_process_urls', False),
+            'auto_detect_channels': slack_settings.get('auto_detect_channels', True),
+            'discovered_channels': slack_settings.get('discovered_channels', {}),
+            'recent_activity_count': len(slack_settings.get('recent_activity', [])),
+            'bot_token_configured': bool(slack_settings.get('bot_token')),
+            'signing_secret_configured': bool(slack_settings.get('signing_secret'))
+        }
+        
+        return jsonify({
+            'success': True,
+            'config': safe_config
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/config/slack', methods=['POST'])
+@admin_required
+def api_admin_update_slack_config():
+    """Update Slack configuration (admin only)."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        config = load_config()
+        slack_settings = config.get('slack_settings', {})
+        
+        # Update configuration fields
+        if 'bot_token' in data and data['bot_token']:
+            slack_settings['bot_token'] = str(data['bot_token']).strip()
+        if 'signing_secret' in data and data['signing_secret']:
+            slack_settings['signing_secret'] = str(data['signing_secret']).strip()
+        if 'channel_id' in data:
+            slack_settings['channel_id'] = str(data['channel_id']).strip()
+        if 'auto_process_urls' in data:
+            slack_settings['auto_process_urls'] = bool(data['auto_process_urls'])
+        if 'auto_detect_channels' in data:
+            slack_settings['auto_detect_channels'] = bool(data['auto_detect_channels'])
+        
+        config['slack_settings'] = slack_settings
+        save_config(config)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Slack configuration updated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/config/test-oidc', methods=['POST'])
+@admin_required
+def api_admin_test_oidc():
+    """Test OIDC configuration (admin only)."""
+    try:
+        config = load_config()
+        oidc_settings = config.get('oidc_settings', {})
+        
+        if not oidc_settings.get('enabled'):
+            return jsonify({
+                'success': False,
+                'error': 'OIDC is not enabled'
+            })
+        
+        provider_url = oidc_settings.get('provider_url')
+        if not provider_url:
+            return jsonify({
+                'success': False,
+                'error': 'Provider URL not configured'
+            })
+        
+        # Test OIDC discovery endpoint
+        discovery_url = f"{provider_url.rstrip('/')}/.well-known/openid_configuration"
+        response = requests.get(discovery_url, timeout=10)
+        
+        if response.status_code == 200:
+            discovery_data = response.json()
+            return jsonify({
+                'success': True,
+                'message': 'OIDC provider is reachable',
+                'provider_info': {
+                    'issuer': discovery_data.get('issuer'),
+                    'authorization_endpoint': discovery_data.get('authorization_endpoint'),
+                    'token_endpoint': discovery_data.get('token_endpoint'),
+                    'userinfo_endpoint': discovery_data.get('userinfo_endpoint'),
+                    'scopes_supported': discovery_data.get('scopes_supported', [])
+                }
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'OIDC provider returned status {response.status_code}'
+            })
+    except requests.RequestException as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to connect to OIDC provider: {str(e)}'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 def get_working_proxy():
     """Test and return a working proxy from available free options."""
     import requests
