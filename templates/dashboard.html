@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}Slack Activity Dashboard - StreamSnap{% endblock %}
+
+{% block head %}
+<style>
+.dashboard-container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 2rem;
+}
+
+.dashboard-header {
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    color: white;
+    padding: 2rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.dashboard-title {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.dashboard-subtitle {
+    opacity: 0.9;
+}
+
+.nav-link {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    text-decoration: none;
+    border-radius: var(--border-radius);
+    margin-bottom: 1rem;
+    transition: background 0.3s;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+    text-decoration: none;
+    color: white;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.section-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.section-header {
+    background: var(--primary-color);
+    color: white;
+    padding: 1rem 1.5rem;
+    font-weight: bold;
+}
+
+.section-content {
+    padding: 1.5rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.channel-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.channel-item:last-child {
+    border-bottom: none;
+}
+
+.channel-info {
+    flex: 1;
+}
+
+.channel-id {
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.channel-type {
+    display: inline-block;
+    background: var(--accent-color);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
+
+.channel-stats {
+    text-align: right;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.activity-count {
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.activity-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.activity-title {
+    font-weight: bold;
+    color: var(--text-primary);
+    flex: 1;
+    margin-right: 1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-time {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.activity-details {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.activity-type {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+}
+
+.activity-type.canvas_created {
+    background: #28a745;
+    color: white;
+}
+
+.activity-type.video_processed {
+    background: #007bff;
+    color: white;
+}
+
+.activity-type.transcript_generated {
+    background: #17a2b8;
+    color: white;
+}
+
+.video-link {
+    color: var(--accent-color);
+    text-decoration: none;
+}
+
+.video-link:hover {
+    text-decoration: underline;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2rem;
+}
+
+.refresh-btn {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+.refresh-btn:hover {
+    background: var(--accent-color);
+}
+
+@media (max-width: 768px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <a href="{{ url_for('index') }}" class="nav-link">← Back to StreamSnap</a>
+    
+    <div class="dashboard-header">
+        <h1 class="dashboard-title">📊 Slack Activity Dashboard</h1>
+        <p class="dashboard-subtitle">Monitor StreamSnap activity across Slack channels (last 30 days)</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ activity.total_channels }}</div>
+            <div class="stat-label">Active Channels</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ activity.total_activities }}</div>
+            <div class="stat-label">Total Activities</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ activity.recent_activity|length }}</div>
+            <div class="stat-label">Recent Activities</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ activity.channels|selectattr('recent_videos')|list|length }}</div>
+            <div class="stat-label">Channels with Videos</div>
+        </div>
+    </div>
+
+    <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
+
+    <div class="content-grid">
+        <div class="section-card">
+            <div class="section-header">
+                🏷️ Discovered Channels ({{ activity.channels|length }})
+            </div>
+            <div class="section-content" id="channels-content">
+                {% if activity.channels %}
+                    {% for channel in activity.channels %}
+                    <div class="channel-item">
+                        <div class="channel-info">
+                            <div>
+                                <span class="channel-id">{{ channel.id }}</span>
+                                <span class="channel-type">{{ channel.type }}</span>
+                            </div>
+                            <div style="margin-top: 0.5rem;">
+                                <small>First seen: {{ channel.first_seen|timestamp_to_date }}</small><br>
+                                <small>Last seen: {{ channel.last_seen|timestamp_to_date }}</small>
+                            </div>
+                        </div>
+                        <div class="channel-stats">
+                            <div class="activity-count">{{ channel.activity_count }}</div>
+                            <small>activities</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <p>No channels discovered yet</p>
+                        <small>Channels will appear here when StreamSnap processes YouTube URLs</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="section-card">
+            <div class="section-header">
+                🎬 Recent Activity ({{ activity.recent_activity|length }})
+            </div>
+            <div class="section-content" id="activity-content">
+                {% if activity.recent_activity %}
+                    {% for item in activity.recent_activity %}
+                    <div class="activity-item">
+                        <div class="activity-header">
+                            <div class="activity-title">{{ item.video_title }}</div>
+                            <div class="activity-time">{{ item.timestamp|timestamp_to_relative }}</div>
+                        </div>
+                        <div class="activity-details">
+                            <span class="activity-type {{ item.type }}">{{ item.type.replace('_', ' ')|title }}</span>
+                            <span>by <code>{{ item.user_id }}</code> in <code>{{ item.channel_id }}</code></span>
+                            {% if item.video_url %}
+                                <br><a href="{{ item.video_url }}" class="video-link" target="_blank">🎥 Watch Video</a>
+                            {% endif %}
+                            {% if item.details.canvas_id %}
+                                <br><small>Canvas ID: <code>{{ item.details.canvas_id }}</code></small>
+                            {% endif %}
+                            {% if item.details.duration %}
+                                <br><small>Duration: {{ item.details.duration|duration_format }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="empty-state">
+                        <p>No recent activity</p>
+                        <small>Activity will appear here when StreamSnap processes YouTube videos</small>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function refreshData() {
+    const refreshBtn = document.querySelector('.refresh-btn');
+    refreshBtn.textContent = '⏳ Refreshing...';
+    refreshBtn.disabled = true;
+
+    fetch('/api/slack/activity')
+        .then(response => response.json())
+        .then(data => {
+            // Update stats
+            document.querySelectorAll('.stat-number')[0].textContent = data.total_channels;
+            document.querySelectorAll('.stat-number')[1].textContent = data.total_activities;
+            document.querySelectorAll('.stat-number')[2].textContent = data.recent_activity.length;
+            document.querySelectorAll('.stat-number')[3].textContent = data.channels.filter(c => c.recent_videos.length > 0).length;
+            
+            // Refresh the page to update content with proper templating
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        })
+        .catch(error => {
+            console.error('Error refreshing data:', error);
+            refreshBtn.textContent = '❌ Error';
+            setTimeout(() => {
+                refreshBtn.textContent = '🔄 Refresh Data';
+                refreshBtn.disabled = false;
+            }, 2000);
+        });
+}
+
+// Auto-refresh every 30 seconds
+setInterval(() => {
+    refreshData();
+}, 30000);
+</script>
+{% endblock %}

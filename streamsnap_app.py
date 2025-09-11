@@ -17,6 +17,64 @@ import threading
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-in-production')
 
+# Template filters for dashboard
+@app.template_filter('timestamp_to_date')
+def timestamp_to_date(timestamp):
+    """Convert timestamp to readable date."""
+    if not timestamp:
+        return 'Never'
+    try:
+        from datetime import datetime
+        return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M')
+    except:
+        return 'Invalid date'
+
+@app.template_filter('timestamp_to_relative')  
+def timestamp_to_relative(timestamp):
+    """Convert timestamp to relative time (e.g., '2 hours ago')."""
+    if not timestamp:
+        return 'Unknown'
+    try:
+        from datetime import datetime
+        import time as time_module
+        
+        now = time_module.time()
+        diff = now - timestamp
+        
+        if diff < 60:
+            return 'Just now'
+        elif diff < 3600:
+            mins = int(diff / 60)
+            return f'{mins} minute{"s" if mins != 1 else ""} ago'
+        elif diff < 86400:
+            hours = int(diff / 3600)  
+            return f'{hours} hour{"s" if hours != 1 else ""} ago'
+        else:
+            days = int(diff / 86400)
+            return f'{days} day{"s" if days != 1 else ""} ago'
+    except:
+        return 'Unknown time'
+
+@app.template_filter('duration_format')
+def duration_format(seconds):
+    """Format duration in seconds to readable format."""
+    if not seconds:
+        return '0s'
+    try:
+        seconds = int(seconds)
+        if seconds < 60:
+            return f'{seconds}s'
+        elif seconds < 3600:
+            mins = seconds // 60
+            secs = seconds % 60
+            return f'{mins}m {secs}s' if secs else f'{mins}m'
+        else:
+            hours = seconds // 3600
+            mins = (seconds % 3600) // 60
+            return f'{hours}h {mins}m' if mins else f'{hours}h'
+    except:
+        return 'Unknown duration'
+
 START_TIME = time.time()
 
 # Global URL deduplication tracking
@@ -329,6 +387,7 @@ def load_config():
             'auto_process_urls': os.getenv('SLACK_AUTO_PROCESS', 'false').lower() == 'true',
             'auto_detect_channels': os.getenv('SLACK_AUTO_DETECT', 'true').lower() == 'true',
             'discovered_channels': {},
+            'recent_activity': [],
         },
         'ui_settings': {
             'app_name': os.getenv('APP_NAME', 'StreamSnap'),
@@ -414,6 +473,24 @@ def admin_save():
         flash(f'Error updating configuration: {str(e)}', 'error')
     
     return redirect(url_for('admin'))
+
+@app.route('/dashboard')
+def dashboard():
+    """Slack activity dashboard."""
+    # Seed activity from logs on first access if no activity exists
+    config = load_config()
+    if not config.get('slack_settings', {}).get('recent_activity'):
+        seed_activity_from_logs()
+    
+    activity_data = get_slack_activity_data()
+    version_info = load_version_info()
+    return render_template('dashboard.html', activity=activity_data, version_info=version_info)
+
+@app.route('/api/slack/activity')
+def api_slack_activity():
+    """API endpoint for Slack activity data (for AJAX updates)."""
+    activity_data = get_slack_activity_data()
+    return jsonify(activity_data)
 
 def get_working_proxy():
     """Test and return a working proxy from available free options."""
@@ -2331,6 +2408,140 @@ def remove_discovered_channel(channel_id):
     except Exception as e:
         print(f"⚠️  Failed to remove discovered channel {channel_id}: {e}")
 
+def log_activity(activity_type, channel_id, user_id, video_title, video_url, details=None):
+    """Log Slack activity for dashboard display."""
+    config = load_config()
+    try:
+        slack_settings = config.get('slack_settings', {})
+        activity_log = slack_settings.get('recent_activity', [])
+        
+        # Create activity record
+        activity = {
+            'timestamp': time.time(),
+            'type': activity_type,  # 'video_processed', 'canvas_created', 'transcript_generated'
+            'channel_id': channel_id,
+            'user_id': user_id,
+            'video_title': video_title,
+            'video_url': video_url,
+            'details': details or {}
+        }
+        
+        # Add to beginning of list (newest first)
+        activity_log.insert(0, activity)
+        
+        # Keep only last 30 days of activities
+        thirty_days_ago = time.time() - (30 * 24 * 60 * 60)
+        activity_log = [a for a in activity_log if a.get('timestamp', 0) > thirty_days_ago]
+        
+        slack_settings['recent_activity'] = activity_log
+        config['slack_settings'] = slack_settings
+        
+        save_config(config)
+        print(f"📊 Logged activity: {activity_type} in {channel_id}")
+        
+    except Exception as e:
+        print(f"⚠️  Failed to log activity: {e}")
+
+def get_slack_activity_data():
+    """Get comprehensive Slack activity data for dashboard."""
+    config = load_config()
+    slack_settings = config.get('slack_settings', {})
+    
+    # Get discovered channels with metadata
+    discovered = slack_settings.get('discovered_channels', {})
+    channels_data = []
+    
+    for channel_id, info in discovered.items():
+        channel_data = {
+            'id': channel_id,
+            'type': info.get('type', 'unknown'),
+            'first_seen': info.get('first_seen', 0),
+            'last_seen': info.get('last_seen', 0),
+            'activity_count': 0,
+            'recent_videos': []
+        }
+        channels_data.append(channel_data)
+    
+    # Get recent activity
+    activity_log = slack_settings.get('recent_activity', [])
+    
+    # Count activities per channel and add recent videos
+    for activity in activity_log:
+        for channel in channels_data:
+            if channel['id'] == activity['channel_id']:
+                channel['activity_count'] += 1
+                if len(channel['recent_videos']) < 5:  # Keep last 5 videos per channel
+                    channel['recent_videos'].append({
+                        'title': activity['video_title'],
+                        'url': activity['video_url'],
+                        'timestamp': activity['timestamp'],
+                        'user_id': activity['user_id'],
+                        'type': activity['type']
+                    })
+    
+    return {
+        'channels': channels_data,
+        'recent_activity': activity_log[:50],  # Last 50 activities overall (30 days)
+        'total_channels': len(discovered),
+        'total_activities': len(activity_log)
+    }
+
+def seed_activity_from_logs():
+    """Seed activity history from container logs and existing data."""
+    try:
+        import re
+        import subprocess
+        from datetime import datetime, timedelta
+        
+        print("🌱 Seeding activity history from container logs...")
+        
+        # Get last 30 days of container logs
+        try:
+            # Try to get logs from current container
+            result = subprocess.run(['docker', 'logs', '--since', '30d', 'streamsnap'], 
+                                  capture_output=True, text=True, timeout=30)
+            logs = result.stdout + result.stderr
+        except Exception as e:
+            print(f"⚠️  Could not get container logs: {e}")
+            return
+        
+        # Parse logs for video processing activities
+        video_pattern = r'🎬.*?Fetching video information.*?https://.*?youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})'
+        canvas_pattern = r'📋 Canvas created successfully.*?Canvas ID: ([a-zA-Z0-9]+)'
+        transcript_pattern = r'📝 Using (transcript|captions)'
+        
+        activities_found = 0
+        
+        for line in logs.split('\n'):
+            # Look for video processing
+            if '🎬' in line and 'youtube.com' in line:
+                video_match = re.search(video_pattern, line)
+                if video_match:
+                    video_id = video_match.group(1)
+                    
+                    # Estimate timestamp from log (rough approximation)
+                    # In real implementation, you'd parse the actual log timestamps
+                    estimated_time = time.time() - (activities_found * 3600)  # Spread over time
+                    
+                    # Log synthetic activity
+                    log_activity(
+                        activity_type='video_processed',
+                        channel_id='seeded_data',
+                        user_id='system',
+                        video_title=f'Video {video_id}',
+                        video_url=f'https://youtube.com/watch?v={video_id}',
+                        details={'seeded': True, 'estimated_time': estimated_time}
+                    )
+                    activities_found += 1
+                    
+                    if activities_found >= 20:  # Limit seeded data
+                        break
+        
+        print(f"✅ Seeded {activities_found} activities from logs")
+        
+    except Exception as e:
+        print(f"⚠️  Failed to seed activity from logs: {e}")
+
 def get_target_channels(slack_settings):
     """Parse channel configuration to support multiple channels and DMs."""
     # Check if auto-detect mode is enabled
@@ -2627,7 +2838,7 @@ Try posting a real YouTube URL to see the full video processing pipeline in acti
     except Exception as e:
         print(f"❌ Error in Canvas test: {e}")
 
-def process_video_async(url, config, target_channel=None, message_ts=None):
+def process_video_async(url, config, target_channel=None, message_ts=None, user_id=None):
     """Process video in background thread."""
     global processing_urls
     clean_url = None
@@ -2687,6 +2898,22 @@ def process_video_async(url, config, target_channel=None, message_ts=None):
             
             if canvas_id:
                 print(f"✅ Slack Canvas created successfully: {canvas_id}")
+                
+                # Log activity for dashboard
+                log_activity(
+                    activity_type='canvas_created',
+                    channel_id=canvas_channel,
+                    user_id=user_id or 'unknown',
+                    video_title=response['video_info'].get('title', 'Unknown Video'),
+                    video_url=clean_url,
+                    details={
+                        'canvas_id': canvas_id,
+                        'has_chapters': len(response['video_info'].get('chapters', [])) > 0,
+                        'has_transcript': bool(response['results'].get('transcript')),
+                        'duration': response['video_info'].get('duration', 0)
+                    }
+                )
+                
                 # Post threaded Canvas reply if we have message timestamp, otherwise fallback to simple link
                 if message_ts:
                     canvas_link_success = post_threaded_canvas_reply(canvas_id, canvas_config, canvas_channel, message_ts)
@@ -2832,7 +3059,7 @@ def slack_events():
                         for url in youtube_urls:
                             thread = threading.Thread(
                                 target=process_video_async, 
-                                args=(url, config, channel)
+                                args=(url, config, channel, message_ts, user)
                             )
                             thread.daemon = True
                             thread.start()
