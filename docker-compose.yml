@@ -1,8 +1,7 @@
-version: '3.8'
 
 services:
   streamsnap:
-    image: ghcr.io/brentley/streamsnap:latest
+    build: .
     container_name: streamsnap
     restart: unless-stopped
     environment:

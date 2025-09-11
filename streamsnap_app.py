@@ -25,13 +25,17 @@ from flask_session import Session
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-in-production')
 
-# Session configuration for OIDC
+# Session configuration for OIDC - simplified for Authlib compatibility
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_PERMANENT'] = True  # Allow permanent sessions for OAuth state
+app.config['SESSION_PERMANENT'] = False  # Let Authlib manage session persistence
 app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_FILE_THRESHOLD'] = 100
+app.config['SESSION_FILE_THRESHOLD'] = 500
 app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Session lifetime
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+# Configure session cookie settings for OIDC state management
+app.config['SESSION_COOKIE_SECURE'] = False  # Allow HTTP for local development
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Important for OAuth flows
 Session(app)
 
 # Initialize OAuth
@@ -868,11 +872,19 @@ def auth_callback():
                                  message='Authentication failed - could not exchange code',
                                  status=400), 400
         
-        # Get user info from the token
-        user_info = token.get('userinfo')
-        if not user_info and 'access_token' in token:
-            # Try to get user info from userinfo endpoint
-            user_info = auth_manager.oauth_client.parse_id_token(token)
+        # Get user info from the token using Authlib's built-in method
+        user_info = None
+        try:
+            # First try to get from ID token if present
+            if 'id_token' in token:
+                user_info = auth_manager.oauth_client.parse_id_token(token)
+            
+            # If no user info from ID token, call userinfo endpoint
+            if not user_info and 'access_token' in token:
+                user_info = auth_manager.oauth_client.userinfo(token=token)
+                
+        except Exception as e:
+            print(f"⚠️ Error getting user info: {e}")
         
         if not user_info:
             return render_template('error.html', 
