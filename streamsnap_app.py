@@ -360,18 +360,23 @@ class OIDCAuthManager:
             return
             
         try:
-            # Configure OAuth client
+            # Configure OAuth client with manual endpoints (bypassing auto-discovery)
             self.oauth_client = oauth.register(
                 name='oidc',
                 client_id=oidc_settings.get('client_id'),
                 client_secret=oidc_settings.get('client_secret'),
-                server_metadata_url=f"{oidc_settings.get('provider_url')}/.well-known/openid_configuration",
+                # Manual endpoint configuration instead of server_metadata_url
+                authorize_url='https://id.visiquate.com/application/o/authorize/',
+                token_url='https://id.visiquate.com/application/o/token/',
+                userinfo_url='https://id.visiquate.com/application/o/userinfo/',
+                jwks_uri='https://id.visiquate.com/application/o/streamsnap/jwks/',
+                issuer='https://id.visiquate.com/application/o/streamsnap/',
                 client_kwargs={
                     'scope': ' '.join(oidc_settings.get('scopes', ['openid', 'email', 'profile']))
                 }
             )
             self.config = oidc_settings
-            print(f"✅ OIDC OAuth client initialized for provider: {oidc_settings.get('provider_url')}")
+            print(f"✅ OIDC OAuth client initialized with manual endpoints for provider: {oidc_settings.get('provider_url')}")
             self._initialized = True
         except Exception as e:
             print(f"⚠️ Failed to initialize OIDC OAuth client: {e}")
