@@ -821,7 +821,9 @@ def auth_login():
         return redirect(url_for('dashboard'))
     
     try:
-        redirect_uri = request.url_root.rstrip('/') + '/auth/callback'
+        # Use configured redirect URI instead of constructing from request
+        config = load_config()
+        redirect_uri = config.get('oidc_settings', {}).get('redirect_uri') or (request.url_root.rstrip('/') + '/auth/callback')
         auth_url = auth_manager.get_auth_url(redirect_uri)
         
         if not auth_url:
@@ -849,7 +851,9 @@ def auth_callback():
                              status=400), 400
     
     try:
-        redirect_uri = request.url_root.rstrip('/') + '/auth/callback'
+        # Use configured redirect URI instead of constructing from request
+        config = load_config()
+        redirect_uri = config.get('oidc_settings', {}).get('redirect_uri') or (request.url_root.rstrip('/') + '/auth/callback')
         auth_result = auth_manager.exchange_code(code, redirect_uri)
         
         if not auth_result:
