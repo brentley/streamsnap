@@ -86,6 +86,112 @@ processing_urls = {}
 active_threads = {}
 shutdown_requested = False
 
+# Video processing queue system
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+class VideoProcessingQueue:
+    def __init__(self, max_concurrent=3, max_queue_size=50):
+        self.max_concurrent = max_concurrent
+        self.max_queue_size = max_queue_size
+        self.task_queue = queue.Queue(maxsize=max_queue_size)
+        self.executor = ThreadPoolExecutor(max_workers=max_concurrent, thread_name_prefix="VideoProcessor")
+        self.queue_stats = {
+            'queued': 0,
+            'processing': 0,
+            'completed': 0,
+            'failed': 0,
+            'dropped': 0
+        }
+        self.running = True
+        self._start_queue_monitor()
+    
+    def _start_queue_monitor(self):
+        """Start the queue monitoring thread."""
+        monitor_thread = threading.Thread(target=self._queue_monitor, daemon=True, name="QueueMonitor")
+        monitor_thread.start()
+    
+    def _queue_monitor(self):
+        """Monitor queue and process tasks."""
+        while self.running:
+            try:
+                # Get task from queue with timeout
+                task = self.task_queue.get(timeout=1.0)
+                
+                # Submit task to thread pool
+                future = self.executor.submit(self._process_task, task)
+                
+                # Update stats
+                self.queue_stats['processing'] += 1
+                self.queue_stats['queued'] = max(0, self.queue_stats['queued'] - 1)
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"⚠️ Queue monitor error: {e}")
+    
+    def _process_task(self, task):
+        """Process a queued video task."""
+        try:
+            url, config, channel, message_ts, user_id = task['args']
+            task_id = task['id']
+            
+            print(f"🎬 Processing queued video: {url} (task {task_id})")
+            
+            # Call the original processing function
+            process_video_async(url, config, channel, message_ts, user_id)
+            
+            self.queue_stats['completed'] += 1
+            print(f"✅ Completed queued video: {url} (task {task_id})")
+            
+        except Exception as e:
+            self.queue_stats['failed'] += 1
+            print(f"❌ Failed queued video processing: {e}")
+        finally:
+            self.queue_stats['processing'] = max(0, self.queue_stats['processing'] - 1)
+    
+    def add_video(self, url, config, channel=None, message_ts=None, user_id=None):
+        """Add a video to the processing queue."""
+        task_id = f"task_{int(time.time())}_{hash(url) % 10000}"
+        
+        task = {
+            'id': task_id,
+            'url': url,
+            'args': (url, config, channel, message_ts, user_id),
+            'queued_at': time.time()
+        }
+        
+        try:
+            # Try to add to queue
+            self.task_queue.put_nowait(task)
+            self.queue_stats['queued'] += 1
+            print(f"📥 Queued video for processing: {url} (task {task_id}, queue size: {self.task_queue.qsize()})")
+            return True, task_id
+            
+        except queue.Full:
+            self.queue_stats['dropped'] += 1
+            print(f"⚠️ Queue full! Dropped video: {url}")
+            return False, None
+    
+    def get_stats(self):
+        """Get current queue statistics."""
+        return {
+            **self.queue_stats,
+            'queue_size': self.task_queue.qsize(),
+            'max_concurrent': self.max_concurrent,
+            'max_queue_size': self.max_queue_size
+        }
+    
+    def shutdown(self):
+        """Gracefully shutdown the queue system."""
+        print("🛑 Shutting down video processing queue...")
+        self.running = False
+        self.executor.shutdown(wait=True)
+
+# Initialize global video processing queue
+video_queue = VideoProcessingQueue(max_concurrent=3, max_queue_size=50)
+
 def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
     """Register an active processing thread for safe restart tracking."""
     active_threads[thread_id] = {
@@ -603,6 +709,47 @@ def api_slack_activity():
     """API endpoint for Slack activity data (for AJAX updates)."""
     activity_data = get_slack_activity_data()
     return jsonify(activity_data)
+
+@app.route('/api/queue/status')
+def api_queue_status():
+    """API endpoint for video processing queue status."""
+    queue_stats = video_queue.get_stats()
+    return jsonify({
+        'status': 'ok',
+        'queue': queue_stats,
+        'timestamp': time.time()
+    })
+
+@app.route('/api/queue/stats')
+def api_queue_stats():
+    """Detailed queue statistics for monitoring."""
+    queue_stats = video_queue.get_stats()
+    processing_status = get_active_processing_status()
+    
+    return jsonify({
+        'queue': {
+            'size': queue_stats['queue_size'],
+            'max_size': queue_stats['max_queue_size'],
+            'utilization': round(queue_stats['queue_size'] / queue_stats['max_queue_size'] * 100, 1),
+            'concurrent_limit': queue_stats['max_concurrent'],
+            'currently_processing': queue_stats['processing']
+        },
+        'counters': {
+            'total_queued': queue_stats['queued'],
+            'completed': queue_stats['completed'], 
+            'failed': queue_stats['failed'],
+            'dropped': queue_stats['dropped']
+        },
+        'processing': {
+            'active_threads': processing_status['active_count'],
+            'active_details': processing_status['active_threads']
+        },
+        'system': {
+            'can_safely_restart': processing_status['can_safely_restart'],
+            'shutdown_requested': processing_status['shutdown_requested']
+        },
+        'timestamp': time.time()
+    })
 
 @app.route('/api/system/status')
 def api_system_status():
@@ -3220,14 +3367,13 @@ def slack_events():
                     if youtube_urls:
                         print(f"🎬 Detected YouTube URLs in Slack: {youtube_urls}")
                         
-                        # Process each URL in background
+                        # Process each URL through the queue system
                         for url in youtube_urls:
-                            thread = threading.Thread(
-                                target=process_video_async, 
-                                args=(url, config, channel, message_ts, user)
-                            )
-                            thread.daemon = True
-                            thread.start()
+                            success, task_id = video_queue.add_video(url, config, channel, message_ts, user)
+                            if success:
+                                print(f"📥 Added video to processing queue: {url} (task: {task_id})")
+                            else:
+                                print(f"⚠️ Queue full - video processing delayed: {url}")
                         
                         # Send immediate acknowledgment to Slack
                         return jsonify({'status': 'processing'}), 200
@@ -3314,12 +3460,12 @@ def slack_events():
                             else:
                                 print(f"📝 Link posted to channel - Canvas will appear as threaded reply to {message_ts}")
                             
-                            thread = threading.Thread(
-                                target=process_video_async, 
-                                args=(url, config, channel, thread_message_ts)  # Pass message_ts only if not in thread
-                            )
-                            thread.daemon = True
-                            thread.start()
+                            # Add to queue system instead of creating thread directly
+                            success, task_id = video_queue.add_video(url, config, channel, thread_message_ts)
+                            if success:
+                                print(f"📥 Queued link shared video: {url} (task: {task_id})")
+                            else:
+                                print(f"⚠️ Queue full - link processing delayed: {url}")
                         
                         # Send immediate acknowledgment to Slack
                         return jsonify({'status': 'processing'}), 200

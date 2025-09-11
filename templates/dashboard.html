@@ -276,6 +276,7 @@
 
     <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
     <button class="refresh-btn" onclick="checkSystemStatus()" style="background: #17a2b8;">🔍 System Status</button>
+    <button class="refresh-btn" onclick="checkQueueStatus()" style="background: #28a745;">📥 Queue Status</button>
 
     <!-- System Status Section -->
     <div class="section-card" id="system-status" style="display: none;">
@@ -283,6 +284,16 @@
             🖥️ System Status & Safe Restart
         </div>
         <div class="section-content" id="system-status-content">
+            <!-- Dynamic content loaded by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Queue Status Section -->
+    <div class="section-card" id="queue-status" style="display: none;">
+        <div class="section-header">
+            📥 Video Processing Queue
+        </div>
+        <div class="section-content" id="queue-status-content">
             <!-- Dynamic content loaded by JavaScript -->
         </div>
     </div>
@@ -526,6 +537,109 @@ function cancelRestart() {
             console.error('Error cancelling restart:', error);
             alert('❌ Error cancelling shutdown');
         });
+}
+
+function checkQueueStatus() {
+    const queueSection = document.getElementById('queue-status');
+    const queueContent = document.getElementById('queue-status-content');
+    
+    queueSection.style.display = 'block';
+    queueContent.innerHTML = '<p>⏳ Loading queue status...</p>';
+    
+    fetch('/api/queue/stats')
+        .then(response => response.json())
+        .then(data => {
+            renderQueueStatus(data);
+        })
+        .catch(error => {
+            console.error('Error fetching queue status:', error);
+            queueContent.innerHTML = '<p style="color: red;">❌ Error loading queue status</p>';
+        });
+}
+
+function renderQueueStatus(stats) {
+    const queueContent = document.getElementById('queue-status-content');
+    
+    const queueUtilization = stats.queue.utilization;
+    const queueColor = queueUtilization > 80 ? '#dc3545' : queueUtilization > 50 ? '#ffc107' : '#28a745';
+    
+    let html = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid ${queueColor};">
+                <h4 style="margin-top: 0;">📥 Queue Status</h4>
+                <p><strong>Queue Size:</strong> ${stats.queue.size} / ${stats.queue.max_size}</p>
+                <p><strong>Utilization:</strong> <span style="color: ${queueColor};">${queueUtilization}%</span></p>
+                <div style="background: #e9ecef; height: 8px; border-radius: 4px; margin: 0.5rem 0;">
+                    <div style="background: ${queueColor}; height: 100%; width: ${queueUtilization}%; border-radius: 4px; transition: width 0.3s ease;"></div>
+                </div>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #007bff;">
+                <h4 style="margin-top: 0;">⚙️ Processing</h4>
+                <p><strong>Active Workers:</strong> ${stats.queue.currently_processing} / ${stats.queue.concurrent_limit}</p>
+                <p><strong>Active Threads:</strong> ${stats.processing.active_threads}</p>
+                <p><strong>Safe to Restart:</strong> ${stats.system.can_safely_restart ? '✅ Yes' : '❌ No'}</p>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div style="text-align: center; padding: 1rem; background: #e3f2fd; border-radius: 8px;">
+                <div style="font-size: 2rem; font-weight: bold; color: #1976d2;">${stats.counters.total_queued}</div>
+                <div style="font-size: 0.9rem; color: #666;">Total Queued</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #e8f5e8; border-radius: 8px;">
+                <div style="font-size: 2rem; font-weight: bold; color: #388e3c;">${stats.counters.completed}</div>
+                <div style="font-size: 0.9rem; color: #666;">Completed</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #ffebee; border-radius: 8px;">
+                <div style="font-size: 2rem; font-weight: bold; color: #d32f2f;">${stats.counters.failed}</div>
+                <div style="font-size: 0.9rem; color: #666;">Failed</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #fff3e0; border-radius: 8px;">
+                <div style="font-size: 2rem; font-weight: bold; color: #f57c00;">${stats.counters.dropped}</div>
+                <div style="font-size: 0.9rem; color: #666;">Dropped</div>
+            </div>
+        </div>
+    `;
+    
+    // Show active processing details if any
+    if (stats.processing.active_details.length > 0) {
+        html += `
+            <div style="margin-top: 1rem;">
+                <h4>🔄 Currently Processing</h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+        `;
+        
+        stats.processing.active_details.forEach(thread => {
+            const duration = Math.round(thread.duration);
+            const minutes = Math.floor(duration / 60);
+            const seconds = duration % 60;
+            const durationStr = minutes > 0 ? \`\${minutes}m \${seconds}s\` : \`\${seconds}s\`;
+            
+            html += \`
+                <div style="padding: 0.75rem; border: 1px solid #ddd; margin-bottom: 0.5rem; border-radius: 6px; background: #f8f9fa;">
+                    <div><strong>🎬 Video:</strong> <a href="\${thread.url}" target="_blank" style="color: #007bff;">\${thread.url}</a></div>
+                    <div style="margin-top: 0.25rem;"><strong>⏱️ Duration:</strong> \${durationStr}</div>
+                    <div style="margin-top: 0.25rem;"><strong>👤 User:</strong> \${thread.user_id}</div>
+                </div>
+            \`;
+        });
+        
+        html += \`
+                </div>
+            </div>
+        \`;
+    }
+    
+    html += \`
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #ddd; font-size: 0.9rem; color: #666;">
+            <p><strong>Queue Configuration:</strong> Max \${stats.queue.concurrent_limit} concurrent, \${stats.queue.max_size} queue slots</p>
+            <p><strong>Last Updated:</strong> \${new Date().toLocaleTimeString()}</p>
+            <button onclick="checkQueueStatus()" style="background: #28a745; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">🔄 Refresh</button>
+        </div>
+    \`;
+    
+    queueContent.innerHTML = html;
 }
 </script>
 {% endblock %}
