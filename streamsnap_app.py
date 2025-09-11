@@ -216,12 +216,18 @@ class UserManager:
     
     def __init__(self):
         self.users = {}  # user_id -> user_data
-        self._load_users()
+        self._loaded = False
+    
+    def _ensure_loaded(self):
+        """Ensure user data is loaded."""
+        if not self._loaded:
+            self._load_users()
     
     def _load_users(self):
         """Load user data from config."""
         config = load_config()
         self.users = config.get('users', {})
+        self._loaded = True
     
     def _save_users(self):
         """Save user data to config."""
@@ -231,6 +237,7 @@ class UserManager:
     
     def get_or_create_user(self, slack_user_id, user_info=None):
         """Get existing user or create new one."""
+        self._ensure_loaded()
         if slack_user_id not in self.users:
             # Create new user
             self.users[slack_user_id] = {
@@ -259,6 +266,7 @@ class UserManager:
     
     def add_user_activity(self, slack_user_id, activity):
         """Add activity to user's personal history."""
+        self._ensure_loaded()
         if slack_user_id in self.users:
             user = self.users[slack_user_id]
             
@@ -278,6 +286,7 @@ class UserManager:
     
     def subscribe_user(self, slack_user_id, subscription_type):
         """Subscribe user to a type of notification."""
+        self._ensure_loaded()
         if slack_user_id in self.users:
             user = self.users[slack_user_id]
             if subscription_type not in user['subscriptions']:
@@ -289,6 +298,7 @@ class UserManager:
     
     def unsubscribe_user(self, slack_user_id, subscription_type):
         """Unsubscribe user from a type of notification."""
+        self._ensure_loaded()
         if slack_user_id in self.users:
             user = self.users[slack_user_id]
             if subscription_type in user['subscriptions']:
@@ -300,6 +310,7 @@ class UserManager:
     
     def get_subscribers(self, subscription_type):
         """Get all users subscribed to a type of notification."""
+        self._ensure_loaded()
         subscribers = []
         for user_id, user_data in self.users.items():
             if subscription_type in user_data.get('subscriptions', []):
@@ -308,6 +319,7 @@ class UserManager:
     
     def get_user_stats(self):
         """Get user statistics."""
+        self._ensure_loaded()
         total_users = len(self.users)
         active_users = len([u for u in self.users.values() 
                            if u.get('last_active', 0) > time.time() - 30*24*3600])  # 30 days
