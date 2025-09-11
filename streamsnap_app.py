@@ -415,6 +415,59 @@ def admin_save():
     
     return redirect(url_for('admin'))
 
+def get_working_proxy():
+    """Test and return a working proxy from available free options."""
+    import requests
+    import time
+    
+    # List of free public proxies (residential IPs preferred)
+    free_proxies = [
+        # ProxyMesh free endpoints  
+        'http://us-ca.proxymesh.com:31280',
+        'http://us-ny.proxymesh.com:31280',
+        'http://us-fl.proxymesh.com:31280',
+        'http://au.proxymesh.com:31280',
+        'http://uk.proxymesh.com:31280',
+        # Public SOCKS5 proxies (update these periodically)
+        'socks5://198.49.68.80:80',
+        'socks5://47.243.242.70:20000',
+        'socks5://72.221.164.34:60671',
+    ]
+    
+    # Check if manual proxy is set
+    manual_proxy = os.getenv('YOUTUBE_PROXY_URL')
+    if manual_proxy:
+        print(f"🔧 Using manual proxy: {manual_proxy}")
+        return manual_proxy
+    
+    # Skip proxy testing if disabled
+    if os.getenv('YOUTUBE_DISABLE_PROXY', '').lower() == 'true':
+        print("🚫 Proxy disabled via YOUTUBE_DISABLE_PROXY")
+        return None
+    
+    # Test each proxy quickly
+    for proxy_url in free_proxies:
+        try:
+            print(f"🧪 Testing proxy: {proxy_url}")
+            proxies = {'http': proxy_url, 'https': proxy_url}
+            
+            # Quick test with httpbin (5 second timeout)
+            response = requests.get('http://httpbin.org/ip', 
+                                  proxies=proxies, 
+                                  timeout=5)
+            
+            if response.status_code == 200:
+                proxy_ip = response.json().get('origin', 'unknown')
+                print(f"✅ Proxy working! IP: {proxy_ip}")
+                return proxy_url
+                
+        except Exception as e:
+            print(f"❌ Proxy failed: {str(e)}")
+            continue
+    
+    print("⚠️ No working proxies found, proceeding without proxy")
+    return None
+
 def get_video_info(url):
     """Extract video information using yt-dlp with improved error handling."""
     try:
@@ -433,8 +486,8 @@ def get_video_info(url):
             'ratelimit': 100000,  # 100KB/s limit
         }
         
-        # Add proxy support if configured
-        proxy_url = os.getenv('YOUTUBE_PROXY_URL')
+        # Add proxy support with fallback
+        proxy_url = get_working_proxy()
         if proxy_url:
             ydl_opts['proxy'] = proxy_url
             print(f"🔗 Using proxy: {proxy_url}")
