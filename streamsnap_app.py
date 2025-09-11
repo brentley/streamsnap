@@ -29,6 +29,7 @@ app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_FILE_THRESHOLD'] = 100
+app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
 Session(app)
 
 # Initialize OAuth
