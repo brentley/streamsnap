@@ -81,6 +81,92 @@ START_TIME = time.time()
 # Key: clean video URL, Value: timestamp when processing started
 processing_urls = {}
 
+# Global processing threads tracking for safe restart
+# Key: thread_id, Value: {'thread': thread_object, 'url': video_url, 'started': timestamp, 'user_id': user_id}
+active_threads = {}
+shutdown_requested = False
+
+def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
+    """Register an active processing thread for safe restart tracking."""
+    global active_threads
+    active_threads[thread_id] = {
+        'thread': thread_obj,
+        'url': video_url,
+        'started': time.time(),
+        'user_id': user_id or 'unknown'
+    }
+    print(f"📝 Registered processing thread {thread_id}: {video_url}")
+
+def unregister_processing_thread(thread_id):
+    """Unregister a completed processing thread."""
+    global active_threads
+    if thread_id in active_threads:
+        url = active_threads[thread_id]['url']
+        del active_threads[thread_id]
+        print(f"✅ Unregistered completed thread {thread_id}: {url}")
+
+def get_active_processing_status():
+    """Get current processing status for dashboard and safe restart."""
+    global active_threads
+    
+    # Clean up finished threads
+    finished_threads = []
+    for thread_id, info in active_threads.items():
+        if not info['thread'].is_alive():
+            finished_threads.append(thread_id)
+    
+    for thread_id in finished_threads:
+        unregister_processing_thread(thread_id)
+    
+    # Return current active status
+    active_count = len(active_threads)
+    active_details = []
+    
+    for thread_id, info in active_threads.items():
+        duration = time.time() - info['started']
+        active_details.append({
+            'thread_id': thread_id,
+            'url': info['url'],
+            'user_id': info['user_id'],
+            'duration': duration,
+            'started': info['started']
+        })
+    
+    return {
+        'active_count': active_count,
+        'active_threads': active_details,
+        'can_safely_restart': active_count == 0,
+        'shutdown_requested': shutdown_requested
+    }
+
+def request_graceful_shutdown():
+    """Request graceful shutdown - stop accepting new work and wait for current tasks."""
+    global shutdown_requested
+    shutdown_requested = True
+    print("🛑 Graceful shutdown requested - no new processing will start")
+    
+    return get_active_processing_status()
+
+def wait_for_safe_restart(max_wait_seconds=300):
+    """Wait for all active processing to complete before allowing restart."""
+    global active_threads, shutdown_requested
+    
+    print("⏳ Waiting for active processing to complete before restart...")
+    start_time = time.time()
+    
+    while time.time() - start_time < max_wait_seconds:
+        status = get_active_processing_status()
+        
+        if status['can_safely_restart']:
+            print("✅ All processing complete - safe to restart")
+            return True
+            
+        print(f"⏳ Waiting for {status['active_count']} active threads to complete...")
+        time.sleep(5)
+    
+    print(f"⚠️ Timeout after {max_wait_seconds}s - some threads may still be active")
+    return False
+
 def load_version_info():
     """Load version information from build or fallback to placeholder."""
     try:
@@ -491,6 +577,46 @@ def api_slack_activity():
     """API endpoint for Slack activity data (for AJAX updates)."""
     activity_data = get_slack_activity_data()
     return jsonify(activity_data)
+
+@app.route('/api/system/status')
+def api_system_status():
+    """API endpoint for system status including active processing."""
+    status = get_active_processing_status()
+    return jsonify(status)
+
+@app.route('/api/system/safe-restart', methods=['POST'])
+def api_request_safe_restart():
+    """API endpoint to request graceful shutdown and safe restart."""
+    try:
+        status = request_graceful_shutdown()
+        return jsonify({
+            'success': True,
+            'message': 'Graceful shutdown requested',
+            'status': status
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/system/cancel-restart', methods=['POST'])
+def api_cancel_restart():
+    """API endpoint to cancel graceful shutdown request."""
+    global shutdown_requested
+    try:
+        shutdown_requested = False
+        print("✅ Graceful shutdown cancelled - resuming normal operation")
+        return jsonify({
+            'success': True,
+            'message': 'Graceful shutdown cancelled',
+            'status': get_active_processing_status()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 def get_working_proxy():
     """Test and return a working proxy from available free options."""
@@ -2840,11 +2966,18 @@ Try posting a real YouTube URL to see the full video processing pipeline in acti
 
 def process_video_async(url, config, target_channel=None, message_ts=None, user_id=None):
     """Process video in background thread."""
-    global processing_urls
+    global processing_urls, shutdown_requested
     clean_url = None
+    current_thread = threading.current_thread()
+    thread_id = f"{current_thread.ident}_{int(time.time())}"
     
     try:
-        print(f"🔄 Background processing started for: {url}")
+        # Check if graceful shutdown is requested
+        if shutdown_requested:
+            print(f"🛑 Graceful shutdown in progress - rejecting new processing for: {url}")
+            return
+            
+        print(f"🔄 Background processing started for: {url} (thread: {thread_id})")
         
         # Clean the URL
         video_id = extract_video_id(url)
@@ -2853,6 +2986,9 @@ def process_video_async(url, config, target_channel=None, message_ts=None, user_
             return
         
         clean_url = f"https://www.youtube.com/watch?v={video_id}"
+        
+        # Register this thread for safe restart tracking
+        register_processing_thread(thread_id, current_thread, clean_url, user_id)
         
         # Deduplication check: prevent processing same URL within 10 minutes
         current_time = time.time()
@@ -2946,6 +3082,9 @@ def process_video_async(url, config, target_channel=None, message_ts=None, user_
         if clean_url and clean_url in processing_urls:
             del processing_urls[clean_url]
             print(f"🧹 Removed {clean_url} from processing queue")
+        
+        # Unregister thread from safe restart tracking
+        unregister_processing_thread(thread_id)
 
 @app.route('/slack/events', methods=['POST'])
 def slack_events():

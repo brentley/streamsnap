@@ -275,6 +275,17 @@
     </div>
 
     <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
+    <button class="refresh-btn" onclick="checkSystemStatus()" style="background: #17a2b8;">🔍 System Status</button>
+
+    <!-- System Status Section -->
+    <div class="section-card" id="system-status" style="display: none;">
+        <div class="section-header">
+            🖥️ System Status & Safe Restart
+        </div>
+        <div class="section-content" id="system-status-content">
+            <!-- Dynamic content loaded by JavaScript -->
+        </div>
+    </div>
 
     <div class="content-grid">
         <div class="section-card">
@@ -382,5 +393,139 @@ function refreshData() {
 setInterval(() => {
     refreshData();
 }, 30000);
+
+function checkSystemStatus() {
+    const statusSection = document.getElementById('system-status');
+    const statusContent = document.getElementById('system-status-content');
+    
+    statusSection.style.display = 'block';
+    statusContent.innerHTML = '<p>⏳ Loading system status...</p>';
+    
+    fetch('/api/system/status')
+        .then(response => response.json())
+        .then(data => {
+            renderSystemStatus(data);
+        })
+        .catch(error => {
+            console.error('Error fetching system status:', error);
+            statusContent.innerHTML = '<p style="color: red;">❌ Error loading system status</p>';
+        });
+}
+
+function renderSystemStatus(status) {
+    const statusContent = document.getElementById('system-status-content');
+    
+    let html = `
+        <div style="margin-bottom: 1rem;">
+            <h4>Active Processing Status</h4>
+            <p><strong>Active Threads:</strong> ${status.active_count}</p>
+            <p><strong>Can Safely Restart:</strong> ${status.can_safely_restart ? '✅ Yes' : '❌ No'}</p>
+            <p><strong>Shutdown Requested:</strong> ${status.shutdown_requested ? '🛑 Yes' : '✅ No'}</p>
+        </div>
+    `;
+    
+    if (status.active_threads.length > 0) {
+        html += `
+            <div style="margin-bottom: 1rem;">
+                <h4>Active Processing Threads</h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+        `;
+        
+        status.active_threads.forEach(thread => {
+            const duration = Math.round(thread.duration);
+            html += `
+                <div style="padding: 0.5rem; border: 1px solid #ddd; margin-bottom: 0.5rem; border-radius: 4px;">
+                    <div><strong>URL:</strong> <a href="${thread.url}" target="_blank">${thread.url}</a></div>
+                    <div><strong>User:</strong> ${thread.user_id}</div>
+                    <div><strong>Duration:</strong> ${duration}s</div>
+                    <div><strong>Thread:</strong> ${thread.thread_id}</div>
+                </div>
+            `;
+        });
+        
+        html += '</div></div>';
+    }
+    
+    html += `
+        <div style="margin-top: 1rem;">
+            <h4>Safe Restart Controls</h4>
+    `;
+    
+    if (status.shutdown_requested) {
+        html += `
+            <p style="color: orange;">🛑 Graceful shutdown in progress. Waiting for ${status.active_count} active threads to complete.</p>
+            <button onclick="cancelRestart()" style="background: #28a745; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer;">
+                ✅ Cancel Shutdown
+            </button>
+        `;
+    } else if (status.can_safely_restart) {
+        html += `
+            <p style="color: green;">✅ System is idle - safe to restart container now</p>
+            <p><strong>Instructions:</strong> You can safely run <code>docker compose restart streamsnap</code></p>
+        `;
+    } else {
+        html += `
+            <p style="color: orange;">⚠️ ${status.active_count} active processing threads - not safe to restart</p>
+            <button onclick="requestSafeRestart()" style="background: #dc3545; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer;">
+                🛑 Request Graceful Shutdown
+            </button>
+            <p><small>This will stop accepting new work and wait for current processing to complete.</small></p>
+        `;
+    }
+    
+    html += `
+            <button onclick="checkSystemStatus()" style="background: #17a2b8; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; margin-left: 0.5rem;">
+                🔄 Refresh Status
+            </button>
+        </div>
+    `;
+    
+    statusContent.innerHTML = html;
+}
+
+function requestSafeRestart() {
+    if (!confirm('Request graceful shutdown? This will stop accepting new YouTube processing and wait for active tasks to complete.')) {
+        return;
+    }
+    
+    fetch('/api/system/safe-restart', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Graceful shutdown requested. Monitor the status - you can restart when all threads complete.');
+                checkSystemStatus();
+                // Auto-refresh status every 5 seconds during shutdown
+                const shutdownInterval = setInterval(() => {
+                    checkSystemStatus();
+                }, 5000);
+                
+                // Stop auto-refresh after 10 minutes
+                setTimeout(() => clearInterval(shutdownInterval), 600000);
+            } else {
+                alert('❌ Error requesting shutdown: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error requesting safe restart:', error);
+            alert('❌ Error requesting shutdown');
+        });
+}
+
+function cancelRestart() {
+    fetch('/api/system/cancel-restart', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ Graceful shutdown cancelled. System resumed normal operation.');
+                checkSystemStatus();
+            } else {
+                alert('❌ Error cancelling shutdown: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error cancelling restart:', error);
+            alert('❌ Error cancelling shutdown');
+        });
+}
 </script>
 {% endblock %}

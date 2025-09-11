@@ -1,4 +1,4 @@
-.PHONY: help dev prod test build deploy logs shell stop clean health
+.PHONY: help dev prod test build deploy logs shell stop clean health safe-restart safe-rebuild
 
 help:
 	@echo "StreamSnap - Available commands:"
@@ -12,6 +12,8 @@ help:
 	@echo "  make stop    - Stop all containers"
 	@echo "  make clean   - Clean up everything"
 	@echo "  make health  - Check service health"
+	@echo "  make safe-restart - Safely restart after waiting for active processing"
+	@echo "  make safe-rebuild - Pull code and rebuild safely"
 
 dev:
 	@echo "Starting StreamSnap development environment..."
@@ -64,3 +66,11 @@ clean:
 health:
 	@echo "Checking StreamSnap health..."
 	@curl -f http://localhost:5000/health 2>/dev/null && echo "\n✅ StreamSnap is healthy" || echo "❌ StreamSnap health check failed"
+
+safe-restart:
+	@echo "Performing safe restart..."
+	@./scripts/safe-restart.sh restart
+
+safe-rebuild:
+	@echo "Performing safe rebuild with latest code..."
+	@./scripts/safe-restart.sh rebuild
