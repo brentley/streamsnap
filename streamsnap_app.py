@@ -192,6 +192,122 @@ class VideoProcessingQueue:
 # Initialize global video processing queue
 video_queue = VideoProcessingQueue(max_concurrent=3, max_queue_size=50)
 
+# User management system
+class UserManager:
+    """Manages user accounts, subscriptions, and personal history."""
+    
+    def __init__(self):
+        self.users = {}  # user_id -> user_data
+        self._load_users()
+    
+    def _load_users(self):
+        """Load user data from config."""
+        config = load_config()
+        self.users = config.get('users', {})
+    
+    def _save_users(self):
+        """Save user data to config."""
+        config = load_config()
+        config['users'] = self.users
+        save_config(config)
+    
+    def get_or_create_user(self, slack_user_id, user_info=None):
+        """Get existing user or create new one."""
+        if slack_user_id not in self.users:
+            # Create new user
+            self.users[slack_user_id] = {
+                'slack_user_id': slack_user_id,
+                'display_name': user_info.get('display_name', slack_user_id) if user_info else slack_user_id,
+                'real_name': user_info.get('real_name', '') if user_info else '',
+                'email': user_info.get('email', '') if user_info else '',
+                'created_at': time.time(),
+                'last_active': time.time(),
+                'subscriptions': [],  # List of subscription types: 'all_canvases', 'my_videos', etc.
+                'personal_history': [],  # Personal activity history
+                'preferences': {
+                    'dm_notifications': True,
+                    'email_notifications': False,
+                    'timezone': 'UTC'
+                }
+            }
+            self._save_users()
+            print(f"👤 Created new user: {slack_user_id}")
+        else:
+            # Update last active
+            self.users[slack_user_id]['last_active'] = time.time()
+            self._save_users()
+        
+        return self.users[slack_user_id]
+    
+    def add_user_activity(self, slack_user_id, activity):
+        """Add activity to user's personal history."""
+        if slack_user_id in self.users:
+            user = self.users[slack_user_id]
+            
+            # Add to personal history
+            personal_activity = {
+                **activity,
+                'personal_timestamp': time.time()
+            }
+            
+            user['personal_history'].insert(0, personal_activity)
+            
+            # Keep only last 100 personal activities per user
+            user['personal_history'] = user['personal_history'][:100]
+            
+            self._save_users()
+            print(f"📊 Added activity to user {slack_user_id} personal history")
+    
+    def subscribe_user(self, slack_user_id, subscription_type):
+        """Subscribe user to a type of notification."""
+        if slack_user_id in self.users:
+            user = self.users[slack_user_id]
+            if subscription_type not in user['subscriptions']:
+                user['subscriptions'].append(subscription_type)
+                self._save_users()
+                print(f"📧 Subscribed {slack_user_id} to {subscription_type}")
+                return True
+        return False
+    
+    def unsubscribe_user(self, slack_user_id, subscription_type):
+        """Unsubscribe user from a type of notification."""
+        if slack_user_id in self.users:
+            user = self.users[slack_user_id]
+            if subscription_type in user['subscriptions']:
+                user['subscriptions'].remove(subscription_type)
+                self._save_users()
+                print(f"📧 Unsubscribed {slack_user_id} from {subscription_type}")
+                return True
+        return False
+    
+    def get_subscribers(self, subscription_type):
+        """Get all users subscribed to a type of notification."""
+        subscribers = []
+        for user_id, user_data in self.users.items():
+            if subscription_type in user_data.get('subscriptions', []):
+                subscribers.append(user_data)
+        return subscribers
+    
+    def get_user_stats(self):
+        """Get user statistics."""
+        total_users = len(self.users)
+        active_users = len([u for u in self.users.values() 
+                           if u.get('last_active', 0) > time.time() - 30*24*3600])  # 30 days
+        
+        subscription_counts = {}
+        for user in self.users.values():
+            for sub in user.get('subscriptions', []):
+                subscription_counts[sub] = subscription_counts.get(sub, 0) + 1
+        
+        return {
+            'total_users': total_users,
+            'active_users': active_users,
+            'subscription_counts': subscription_counts
+        }
+
+# Initialize global user manager
+user_manager = UserManager()
+
 def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
     """Register an active processing thread for safe restart tracking."""
     active_threads[thread_id] = {
@@ -784,6 +900,150 @@ def api_cancel_restart():
             'success': True,
             'message': 'Graceful shutdown cancelled',
             'status': get_active_processing_status()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# User Management API Endpoints
+@app.route('/api/users/<user_id>/subscribe', methods=['POST'])
+def api_user_subscribe(user_id):
+    """Subscribe user to notifications for new canvases."""
+    try:
+        data = request.get_json() or {}
+        subscription_type = data.get('type', 'all')  # 'all', 'channel', 'user'
+        channel_id = data.get('channel_id')  # For channel-specific subscriptions
+        
+        # Create subscription
+        subscription = subscription_type
+        if channel_id and subscription_type == 'channel':
+            subscription = f"channel:{channel_id}"
+            
+        user_manager.subscribe_user(user_id, subscription)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Subscribed to {subscription_type} notifications',
+            'subscription': subscription
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/users/<user_id>/unsubscribe', methods=['POST'])
+def api_user_unsubscribe(user_id):
+    """Unsubscribe user from notifications."""
+    try:
+        data = request.get_json() or {}
+        subscription_type = data.get('type', 'all')
+        channel_id = data.get('channel_id')
+        
+        # Create subscription identifier
+        subscription = subscription_type
+        if channel_id and subscription_type == 'channel':
+            subscription = f"channel:{channel_id}"
+            
+        user_manager.unsubscribe_user(user_id, subscription)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Unsubscribed from {subscription_type} notifications',
+            'subscription': subscription
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/users/<user_id>/history')
+def api_user_history(user_id):
+    """Get user's personal activity history."""
+    try:
+        user_data = user_manager.get_or_create_user(user_id)
+        history = user_data.get('personal_history', [])
+        
+        # Format for frontend
+        formatted_history = []
+        for activity in history[-50:]:  # Last 50 activities
+            formatted_activity = {
+                'timestamp': activity.get('timestamp'),
+                'type': activity.get('type'),
+                'video_title': activity.get('video_title'),
+                'video_url': activity.get('video_url'),
+                'channel_id': activity.get('channel_id'),
+                'details': activity.get('details', {})
+            }
+            formatted_history.append(formatted_activity)
+            
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'history': formatted_history,
+            'total_activities': len(user_data.get('personal_history', []))
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/users/<user_id>/profile')
+def api_user_profile(user_id):
+    """Get user profile and subscription status."""
+    try:
+        user_data = user_manager.get_or_create_user(user_id)
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'profile': user_data.get('profile', {}),
+            'subscriptions': user_data.get('subscriptions', []),
+            'preferences': user_data.get('preferences', {}),
+            'activity_count': len(user_data.get('personal_history', []))
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/admin/users')
+def api_admin_users():
+    """Get all users and statistics (admin only)."""
+    try:
+        # TODO: Add admin authentication check once OIDC is implemented
+        user_stats = user_manager.get_user_stats()
+        
+        # Get all users with their basic info
+        all_users = []
+        for user_id, user_data in user_manager.users.items():
+            user_summary = {
+                'user_id': user_id,
+                'profile': user_data.get('profile', {}),
+                'subscriptions': user_data.get('subscriptions', []),
+                'activity_count': len(user_data.get('personal_history', [])),
+                'last_activity': None
+            }
+            
+            # Get last activity timestamp
+            history = user_data.get('personal_history', [])
+            if history:
+                user_summary['last_activity'] = history[0].get('timestamp')
+                
+            all_users.append(user_summary)
+        
+        # Sort by last activity
+        all_users.sort(key=lambda u: u.get('last_activity', 0), reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'stats': user_stats,
+            'users': all_users
         })
     except Exception as e:
         return jsonify({
@@ -2484,6 +2744,97 @@ def share_canvas_to_channel(canvas_id, config, video_title):
         print(f"Error sharing Canvas to channel: {str(e)}")
         return False
 
+def send_canvas_dm_notifications(canvas_id, video_info, config):
+    """Send DM notifications to all subscribed users about new Canvas creation."""
+    try:
+        from slack_sdk import WebClient
+        from slack_sdk.errors import SlackApiError
+        
+        bot_token = config['slack_settings']['bot_token']
+        if not bot_token:
+            print("No Slack bot token configured - skipping DM notifications")
+            return
+        
+        client = WebClient(token=bot_token)
+        
+        # Get all subscribers
+        subscribers = user_manager.get_subscribers('all')  # Get users subscribed to all notifications
+        if not subscribers:
+            print("📧 No subscribed users found for DM notifications")
+            return
+        
+        # Get workspace info for Canvas URL
+        try:
+            auth_result = client.auth_test()
+            workspace_url = auth_result.get('url', 'https://slack.com/')
+            team_id = auth_result.get('team_id', '')
+            channel_id = config['slack_settings']['channel_id']
+            
+            # Try the files URL format
+            canvas_url = f"{workspace_url}files/{canvas_id}?origin_team={team_id}&origin_channel={channel_id}"
+        except:
+            canvas_url = f"slack://canvas/{canvas_id}"  # Fallback
+        
+        # Create DM message
+        video_title = video_info.get('title', 'Unknown Video')
+        video_duration = video_info.get('duration', '')
+        formatted_duration = format_duration(video_duration) if video_duration else ""
+        
+        dm_message = f"""🎬 **New StreamSnap Canvas Available!**
+
+📺 **{video_title}**
+{f"⏱️ Duration: {formatted_duration}" if formatted_duration else ""}
+
+A new video summary Canvas has been created and is ready to view.
+
+👀 [View Canvas]({canvas_url})
+
+_You're receiving this because you're subscribed to StreamSnap notifications. You can manage your subscription preferences anytime._"""
+        
+        # Send DMs to all subscribers
+        successful_dms = 0
+        failed_dms = 0
+        
+        for user_id in subscribers:
+            try:
+                # Open DM channel
+                dm_response = client.conversations_open(users=[user_id])
+                if dm_response.get('ok'):
+                    dm_channel_id = dm_response['channel']['id']
+                    
+                    # Send DM
+                    message_response = client.chat_postMessage(
+                        channel=dm_channel_id,
+                        text=dm_message,
+                        unfurl_links=False,
+                        unfurl_media=False
+                    )
+                    
+                    if message_response.get('ok'):
+                        successful_dms += 1
+                        print(f"📧 Sent Canvas DM notification to user {user_id}")
+                    else:
+                        failed_dms += 1
+                        print(f"⚠️ Failed to send DM to user {user_id}: {message_response.get('error')}")
+                else:
+                    failed_dms += 1
+                    print(f"⚠️ Failed to open DM channel for user {user_id}: {dm_response.get('error')}")
+                    
+            except SlackApiError as e:
+                failed_dms += 1
+                print(f"⚠️ Slack API error sending DM to user {user_id}: {e.response.get('error')}")
+            except Exception as e:
+                failed_dms += 1
+                print(f"⚠️ Error sending DM to user {user_id}: {str(e)}")
+        
+        if successful_dms > 0:
+            print(f"✅ Successfully sent Canvas DM notifications to {successful_dms} users")
+        if failed_dms > 0:
+            print(f"⚠️ Failed to send DM notifications to {failed_dms} users")
+            
+    except Exception as e:
+        print(f"⚠️ Error in send_canvas_dm_notifications: {str(e)}")
+
 @app.route('/api/process-all', methods=['POST'])
 def process_video_all():
     """Process video for all three outputs: summary, timestamps, transcript."""
@@ -2708,7 +3059,7 @@ def remove_discovered_channel(channel_id):
         print(f"⚠️  Failed to remove discovered channel {channel_id}: {e}")
 
 def log_activity(activity_type, channel_id, user_id, video_title, video_url, details=None):
-    """Log Slack activity for dashboard display."""
+    """Log Slack activity for dashboard display and user personal history."""
     config = load_config()
     try:
         slack_settings = config.get('slack_settings', {})
@@ -2736,6 +3087,11 @@ def log_activity(activity_type, channel_id, user_id, video_title, video_url, det
         config['slack_settings'] = slack_settings
         
         save_config(config)
+        
+        # Also log to user's personal history
+        if user_id:
+            user_manager.add_user_activity(user_id, activity)
+        
         print(f"📊 Logged activity: {activity_type} in {channel_id}")
         
     except Exception as e:
@@ -3162,6 +3518,28 @@ def process_video_async(url, config, target_channel=None, message_ts=None, user_
         # Register this thread for safe restart tracking
         register_processing_thread(thread_id, current_thread, clean_url, user_id)
         
+        # Create or update user entry if user_id provided
+        if user_id:
+            # Get user info from Slack if possible
+            user_info = None
+            try:
+                slack_settings = config.get('slack_settings', {})
+                if slack_settings.get('bot_token'):
+                    client = WebClient(token=slack_settings['bot_token'])
+                    user_response = client.users_info(user=user_id)
+                    if user_response.get('ok'):
+                        user_data = user_response.get('user', {})
+                        user_info = {
+                            'name': user_data.get('real_name') or user_data.get('name'),
+                            'email': user_data.get('profile', {}).get('email'),
+                            'display_name': user_data.get('profile', {}).get('display_name')
+                        }
+            except Exception as e:
+                print(f"⚠️ Could not fetch user info for {user_id}: {e}")
+            
+            # Ensure user exists in user manager
+            user_manager.get_or_create_user(user_id, user_info)
+        
         # Deduplication check: prevent processing same URL within 10 minutes
         current_time = time.time()
         if clean_url in processing_urls:
@@ -3221,6 +3599,9 @@ def process_video_async(url, config, target_channel=None, message_ts=None, user_
                         'duration': response['video_info'].get('duration', 0)
                     }
                 )
+                
+                # Send DM notifications to subscribed users
+                send_canvas_dm_notifications(canvas_id, response['video_info'], canvas_config)
                 
                 # Post threaded Canvas reply if we have message timestamp, otherwise fallback to simple link
                 if message_ts:

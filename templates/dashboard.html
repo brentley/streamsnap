@@ -277,6 +277,7 @@
     <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
     <button class="refresh-btn" onclick="checkSystemStatus()" style="background: #17a2b8;">🔍 System Status</button>
     <button class="refresh-btn" onclick="checkQueueStatus()" style="background: #28a745;">📥 Queue Status</button>
+    <button class="refresh-btn" onclick="checkUserManagement()" style="background: #6f42c1;">👥 User Management</button>
 
     <!-- System Status Section -->
     <div class="section-card" id="system-status" style="display: none;">
@@ -294,6 +295,16 @@
             📥 Video Processing Queue
         </div>
         <div class="section-content" id="queue-status-content">
+            <!-- Dynamic content loaded by JavaScript -->
+        </div>
+    </div>
+
+    <!-- User Management Section -->
+    <div class="section-card" id="user-management" style="display: none;">
+        <div class="section-header">
+            👥 User Management & Subscriptions
+        </div>
+        <div class="section-content" id="user-management-content">
             <!-- Dynamic content loaded by JavaScript -->
         </div>
     </div>
@@ -640,6 +651,124 @@ function renderQueueStatus(stats) {
     \`;
     
     queueContent.innerHTML = html;
+}
+
+function checkUserManagement() {
+    const userSection = document.getElementById('user-management');
+    const userContent = document.getElementById('user-management-content');
+    
+    userSection.style.display = 'block';
+    userContent.innerHTML = '<p>⏳ Loading user data...</p>';
+    
+    fetch('/api/admin/users')
+        .then(response => response.json())
+        .then(data => {
+            renderUserManagement(data);
+        })
+        .catch(error => {
+            console.error('Error fetching user data:', error);
+            userContent.innerHTML = '<p style="color: red;">❌ Error loading user data</p>';
+        });
+}
+
+function renderUserManagement(data) {
+    const userContent = document.getElementById('user-management-content');
+    
+    if (!data.success) {
+        userContent.innerHTML = '<p style="color: red;">❌ Failed to load user data</p>';
+        return;
+    }
+    
+    const stats = data.stats;
+    const users = data.users;
+    
+    let html = `
+        <div style="margin-bottom: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">📊 User Statistics</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                <div class="stat-box">
+                    <div class="stat-number">${stats.total_users}</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-number">${stats.active_users}</div>
+                    <div class="stat-label">Active Users</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">📨 Subscription Overview</h4>
+            <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px;">
+    `;
+    
+    if (Object.keys(stats.subscription_counts).length > 0) {
+        html += '<p><strong>Current Subscriptions:</strong></p><ul style="margin: 0.5rem 0;">';
+        for (const [subscription, count] of Object.entries(stats.subscription_counts)) {
+            html += `<li>${subscription}: ${count} user${count !== 1 ? 's' : ''}</li>`;
+        }
+        html += '</ul>';
+    } else {
+        html += '<p><em>No active subscriptions</em></p>';
+    }
+    
+    html += `
+            </div>
+        </div>
+        
+        <div>
+            <h4 style="margin-bottom: 0.5rem;">👥 User Details</h4>
+    `;
+    
+    if (users.length > 0) {
+        html += '<div style="display: grid; gap: 1rem;">';
+        
+        users.forEach(user => {
+            const lastActivity = user.last_activity ? 
+                new Date(user.last_activity * 1000).toLocaleString() : 
+                'Never';
+            const userName = user.profile?.display_name || user.profile?.name || user.user_id;
+            const userEmail = user.profile?.email || 'Unknown';
+            
+            html += `
+                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; border-left: 4px solid #6f42c1;">
+                    <div style="display: flex; justify-content: between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+                        <div style="flex: 1; min-width: 250px;">
+                            <strong>${userName}</strong><br>
+                            <span style="color: var(--text-secondary); font-size: 0.9rem;">
+                                ${userEmail}<br>
+                                ID: ${user.user_id}
+                            </span>
+                        </div>
+                        <div style="min-width: 150px;">
+                            <div style="font-size: 0.9rem;">
+                                <strong>Activity:</strong> ${user.activity_count} actions<br>
+                                <strong>Last seen:</strong> ${lastActivity}<br>
+                                <strong>Subscriptions:</strong> ${user.subscriptions.length}
+                            </div>
+                        </div>
+                    </div>
+            `;
+            
+            if (user.subscriptions.length > 0) {
+                html += `
+                    <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--bg-primary); border-radius: 4px;">
+                        <strong>Subscribed to:</strong> ${user.subscriptions.join(', ')}
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+        });
+        
+        html += '</div>';
+    } else {
+        html += '<p><em>No users found</em></p>';
+    }
+    
+    html += '</div>';
+    
+    userContent.innerHTML = html;
 }
 </script>
 {% endblock %}
