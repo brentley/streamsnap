@@ -422,13 +422,21 @@ def get_working_proxy():
     
     # List of free public proxies (residential IPs preferred)
     free_proxies = [
-        # ProxyMesh free endpoints  
+        # ProxyMesh free endpoints (often overloaded but worth trying)
         'http://us-ca.proxymesh.com:31280',
         'http://us-ny.proxymesh.com:31280',
         'http://us-fl.proxymesh.com:31280',
         'http://au.proxymesh.com:31280',
         'http://uk.proxymesh.com:31280',
-        # Public SOCKS5 proxies (update these periodically)
+        # Free proxy services (update these periodically)
+        'http://proxy-daily.com:8080',
+        'http://free-proxy.cz:8080',
+        # Public HTTP proxies (residential-like IPs)
+        'http://47.88.88.93:8080',
+        'http://158.69.52.218:9300',
+        'http://194.67.91.153:80',
+        'http://103.149.162.194:80',
+        # SOCKS5 proxies
         'socks5://198.49.68.80:80',
         'socks5://47.243.242.70:20000',
         'socks5://72.221.164.34:60671',
@@ -477,13 +485,24 @@ def get_video_info(url):
             'extract_flat': False,
             'socket_timeout': 60,
             'retries': 3,
-            # Anti-bot detection measures
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'sleep_interval': 1,
-            'max_sleep_interval': 5,
-            'sleep_interval_subtitles': 1,
+            # Enhanced anti-bot detection measures
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'sleep_interval': 2,
+            'max_sleep_interval': 8,
+            'sleep_interval_subtitles': 2,
             # Reduce request frequency
-            'ratelimit': 100000,  # 100KB/s limit
+            'ratelimit': 50000,  # 50KB/s limit (more conservative)
+            # Additional headers to appear more human
+            'http_headers': {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            },
+            # Try to extract cookies from browser if available
+            'cookiesfrombrowser': ('chrome',) if os.path.exists('/usr/bin/google-chrome') else None,
         }
         
         # Add proxy support with fallback
