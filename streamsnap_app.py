@@ -433,6 +433,24 @@ def get_video_info(url):
             'ratelimit': 100000,  # 100KB/s limit
         }
         
+        # Add proxy support if configured
+        proxy_url = os.getenv('YOUTUBE_PROXY_URL')
+        if proxy_url:
+            ydl_opts['proxy'] = proxy_url
+            print(f"🔗 Using proxy: {proxy_url}")
+            
+        # Add custom cookies if provided
+        cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
+        if cookies_file and os.path.exists(cookies_file):
+            ydl_opts['cookiefile'] = cookies_file
+            print(f"🍪 Using cookies: {cookies_file}")
+            
+        # Add source IP if configured
+        source_ip = os.getenv('YOUTUBE_SOURCE_IP')
+        if source_ip:
+            ydl_opts['source_address'] = source_ip
+            print(f"📡 Using source IP: {source_ip}")
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             print("  🔍 Extracting video metadata...")
             info = ydl.extract_info(url, download=False)
