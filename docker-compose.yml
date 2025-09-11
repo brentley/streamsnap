@@ -43,6 +43,8 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_SCOPE=streamsnap
+      - REPO_USER=${REPO_USER}
+      - REPO_PASS=${REPO_PASS}
     # Polls for new images every 30 seconds - no API needed
     command: --interval 30 --scope streamsnap
     networks:
