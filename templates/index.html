@@ -15,6 +15,48 @@
     </div>
 </div>
 
+<!-- Authentication Section (when OIDC is enabled and user is not authenticated) -->
+{% if oidc_enabled and not is_authenticated %}
+<div class="auth-section">
+    <div class="auth-card">
+        <div class="auth-content">
+            <h3 class="auth-title">🔐 Sign In Required</h3>
+            <p class="auth-description">
+                Please sign in with your organizational account to access StreamSnap features.
+            </p>
+            <a href="{{ url_for('auth_login') }}" class="auth-btn">
+                Sign In with SSO
+            </a>
+        </div>
+    </div>
+</div>
+{% else %}
+
+<!-- User Info Section (when authenticated) -->
+{% if is_authenticated and current_user %}
+<div class="user-section">
+    <div class="user-card">
+        <div class="user-welcome">
+            <div class="user-info">
+                {% if current_user.picture %}
+                <img src="{{ current_user.picture }}" alt="Profile" class="user-avatar">
+                {% endif %}
+                <div class="user-details">
+                    <div class="user-name">Welcome, {{ current_user.name or current_user.email }}</div>
+                    {% if current_user.is_admin %}
+                    <div class="user-role">Administrator</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="user-actions">
+                <a href="{{ url_for('dashboard') }}" class="btn-secondary">Dashboard</a>
+                <a href="{{ url_for('auth_logout') }}" class="btn-logout">Sign Out</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Video Input Section -->
 <div class="input-section">
     <div class="input-card">
@@ -222,6 +264,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

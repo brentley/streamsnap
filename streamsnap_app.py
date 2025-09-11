@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, flash, redirect, url_for
+from flask import Flask, render_template, jsonify, request, flash, redirect, url_for, session
 import os
 import json
 import time
@@ -13,9 +13,26 @@ import json
 import hmac
 import hashlib
 import threading
+from functools import wraps
+from datetime import datetime, timedelta
+import jwt
+from urllib.parse import urlencode, urlparse
+import requests
+from authlib.integrations.flask_client import OAuth
+from flask_session import Session
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-in-production')
+
+# Session configuration for OIDC
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_FILE_THRESHOLD'] = 100
+Session(app)
+
+# Initialize OAuth
+oauth = OAuth(app)
 
 # Template filters for dashboard
 @app.template_filter('timestamp_to_date')
@@ -308,6 +325,179 @@ class UserManager:
 # Initialize global user manager
 user_manager = UserManager()
 
+class OIDCAuthManager:
+    """Manage OIDC authentication and authorization."""
+    
+    def __init__(self):
+        self.oauth_client = None
+        self.config = None
+        self._initialize_oauth()
+    
+    def _initialize_oauth(self):
+        """Initialize OAuth client with current config."""
+        config = load_config()
+        oidc_settings = config.get('oidc_settings', {})
+        
+        if not oidc_settings.get('enabled'):
+            return
+            
+        try:
+            # Configure OAuth client
+            self.oauth_client = oauth.register(
+                name='oidc',
+                client_id=oidc_settings.get('client_id'),
+                client_secret=oidc_settings.get('client_secret'),
+                server_metadata_url=f"{oidc_settings.get('provider_url')}/.well-known/openid_configuration",
+                client_kwargs={
+                    'scope': ' '.join(oidc_settings.get('scopes', ['openid', 'email', 'profile']))
+                }
+            )
+            self.config = oidc_settings
+            print(f"✅ OIDC OAuth client initialized for provider: {oidc_settings.get('provider_url')}")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize OIDC OAuth client: {e}")
+    
+    def is_enabled(self):
+        """Check if OIDC authentication is enabled."""
+        config = load_config()
+        return config.get('oidc_settings', {}).get('enabled', False)
+    
+    def is_admin(self, user_info):
+        """Check if user is an administrator."""
+        if not user_info:
+            return False
+        
+        config = load_config()
+        admin_users = config.get('oidc_settings', {}).get('admin_users', [])
+        user_email = user_info.get('email', '').lower()
+        
+        return user_email in [admin.lower() for admin in admin_users]
+    
+    def get_auth_url(self, redirect_uri=None):
+        """Generate authorization URL for OIDC flow."""
+        if not self.oauth_client:
+            return None
+            
+        redirect_uri = redirect_uri or self.config.get('redirect_uri')
+        return self.oauth_client.create_authorization_url(redirect_uri)
+    
+    def exchange_code(self, code, redirect_uri=None):
+        """Exchange authorization code for tokens and user info."""
+        if not self.oauth_client:
+            return None
+            
+        try:
+            redirect_uri = redirect_uri or self.config.get('redirect_uri')
+            token = self.oauth_client.authorize_access_token(redirect_uri=redirect_uri)
+            user_info = token.get('userinfo')
+            
+            if not user_info and 'access_token' in token:
+                # Try to get user info from userinfo endpoint
+                user_info = self.oauth_client.parse_id_token(token)
+            
+            return {
+                'token': token,
+                'user_info': user_info
+            }
+        except Exception as e:
+            print(f"⚠️ Error exchanging OIDC code: {e}")
+            return None
+    
+    def create_session(self, user_info, token_info):
+        """Create authenticated session for user."""
+        if not user_info:
+            return False
+            
+        try:
+            session.permanent = True
+            session['user'] = {
+                'id': user_info.get('sub'),
+                'email': user_info.get('email'),
+                'name': user_info.get('name'),
+                'picture': user_info.get('picture'),
+                'is_admin': self.is_admin(user_info),
+                'authenticated_at': time.time()
+            }
+            session['tokens'] = token_info
+            
+            # Create/update user in user manager
+            if self.config.get('auto_create_users', True):
+                user_manager.get_or_create_user(
+                    user_info.get('sub'),
+                    {
+                        'name': user_info.get('name'),
+                        'email': user_info.get('email'),
+                        'picture': user_info.get('picture')
+                    }
+                )
+            
+            print(f"✅ Created session for user: {user_info.get('email')}")
+            return True
+        except Exception as e:
+            print(f"⚠️ Error creating session: {e}")
+            return False
+    
+    def is_authenticated(self):
+        """Check if current session is authenticated."""
+        if not self.is_enabled():
+            return True  # If OIDC is disabled, allow access
+            
+        user = session.get('user')
+        if not user:
+            return False
+            
+        # Check session timeout
+        auth_time = user.get('authenticated_at', 0)
+        timeout = self.config.get('session_timeout', 86400)
+        
+        if time.time() - auth_time > timeout:
+            self.clear_session()
+            return False
+            
+        return True
+    
+    def clear_session(self):
+        """Clear authentication session."""
+        session.clear()
+        print("🔓 User session cleared")
+    
+    def get_current_user(self):
+        """Get current authenticated user info."""
+        return session.get('user')
+
+# Initialize global OIDC auth manager
+auth_manager = OIDCAuthManager()
+
+def login_required(f):
+    """Decorator to require authentication for routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not auth_manager.is_authenticated():
+            if request.is_json:
+                return jsonify({'error': 'Authentication required', 'redirect': '/auth/login'}), 401
+            return redirect(url_for('auth_login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    """Decorator to require admin access for routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not auth_manager.is_authenticated():
+            if request.is_json:
+                return jsonify({'error': 'Authentication required', 'redirect': '/auth/login'}), 401
+            return redirect(url_for('auth_login'))
+        
+        user = auth_manager.get_current_user()
+        if not user or not user.get('is_admin'):
+            if request.is_json:
+                return jsonify({'error': 'Admin access required'}), 403
+            return render_template('error.html', 
+                                 message='Admin access required', 
+                                 status=403), 403
+        return f(*args, **kwargs)
+    return decorated_function
+
 def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
     """Register an active processing thread for safe restart tracking."""
     active_threads[thread_id] = {
@@ -593,11 +783,106 @@ def debug_channels():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+# Authentication routes
+@app.route('/auth/login')
+def auth_login():
+    """Initiate OIDC login flow."""
+    if not auth_manager.is_enabled():
+        return redirect(url_for('index'))
+    
+    if auth_manager.is_authenticated():
+        return redirect(url_for('dashboard'))
+    
+    try:
+        redirect_uri = request.url_root.rstrip('/') + '/auth/callback'
+        auth_url = auth_manager.get_auth_url(redirect_uri)
+        
+        if not auth_url:
+            return render_template('error.html', 
+                                 message='OIDC authentication not properly configured',
+                                 status=500), 500
+        
+        return redirect(auth_url['url'])
+    except Exception as e:
+        print(f"⚠️ Error initiating OIDC login: {e}")
+        return render_template('error.html', 
+                             message='Authentication service temporarily unavailable',
+                             status=500), 500
+
+@app.route('/auth/callback')
+def auth_callback():
+    """Handle OIDC callback and create session."""
+    if not auth_manager.is_enabled():
+        return redirect(url_for('index'))
+    
+    code = request.args.get('code')
+    if not code:
+        return render_template('error.html', 
+                             message='Authentication failed - no authorization code received',
+                             status=400), 400
+    
+    try:
+        redirect_uri = request.url_root.rstrip('/') + '/auth/callback'
+        auth_result = auth_manager.exchange_code(code, redirect_uri)
+        
+        if not auth_result:
+            return render_template('error.html', 
+                                 message='Authentication failed - could not exchange code',
+                                 status=400), 400
+        
+        user_info = auth_result['user_info']
+        token_info = auth_result['token']
+        
+        if not user_info:
+            return render_template('error.html', 
+                                 message='Authentication failed - could not retrieve user information',
+                                 status=400), 400
+        
+        success = auth_manager.create_session(user_info, token_info)
+        if not success:
+            return render_template('error.html', 
+                                 message='Authentication failed - could not create session',
+                                 status=500), 500
+        
+        # Redirect to dashboard after successful authentication
+        return redirect(url_for('dashboard'))
+        
+    except Exception as e:
+        print(f"⚠️ Error in OIDC callback: {e}")
+        return render_template('error.html', 
+                             message='Authentication service error',
+                             status=500), 500
+
+@app.route('/auth/logout')
+def auth_logout():
+    """Clear session and logout."""
+    auth_manager.clear_session()
+    return redirect(url_for('index'))
+
+@app.route('/auth/status')
+def auth_status():
+    """Get current authentication status (API endpoint)."""
+    return jsonify({
+        'authenticated': auth_manager.is_authenticated(),
+        'oidc_enabled': auth_manager.is_enabled(),
+        'user': auth_manager.get_current_user() if auth_manager.is_authenticated() else None
+    })
+
 @app.route('/')
 def index():
     """Main StreamSnap page."""
     version_info = load_version_info()
-    return render_template('index.html', version_info=version_info)
+    
+    # Check if OIDC is enabled and user authentication status
+    oidc_enabled = auth_manager.is_enabled()
+    is_authenticated = auth_manager.is_authenticated()
+    current_user = auth_manager.get_current_user() if is_authenticated else None
+    
+    return render_template('index.html', 
+                         version_info=version_info,
+                         oidc_enabled=oidc_enabled,
+                         is_authenticated=is_authenticated,
+                         current_user=current_user)
 
 @app.route('/api/version')
 def api_version():
@@ -727,6 +1012,19 @@ def load_config():
             'app_name': os.getenv('APP_NAME', 'StreamSnap'),
             'brand_color': os.getenv('BRAND_COLOR', '#116df8'),
             'accent_color': os.getenv('ACCENT_COLOR', '#ff5100'),
+        },
+        'oidc_settings': {
+            'enabled': os.getenv('OIDC_ENABLED', 'false').lower() == 'true',
+            'provider_url': os.getenv('OIDC_PROVIDER_URL', ''),  # e.g., 'https://accounts.google.com'
+            'client_id': os.getenv('OIDC_CLIENT_ID', ''),
+            'client_secret': os.getenv('OIDC_CLIENT_SECRET', ''),
+            'redirect_uri': os.getenv('OIDC_REDIRECT_URI', ''),  # e.g., 'https://streamsnap.example.com/auth/callback'
+            'scopes': ['openid', 'email', 'profile'],
+            'admin_users': [
+                'brent.langston@visiquate.com'  # Default admin user
+            ],
+            'auto_create_users': True,
+            'session_timeout': int(os.getenv('OIDC_SESSION_TIMEOUT', '86400'))  # 24 hours
         }
     }
     
@@ -809,6 +1107,7 @@ def admin_save():
     return redirect(url_for('admin'))
 
 @app.route('/dashboard')
+@login_required
 def dashboard():
     """Slack activity dashboard."""
     # Seed activity from logs on first access if no activity exists
@@ -1013,10 +1312,10 @@ def api_user_profile(user_id):
         }), 500
 
 @app.route('/api/admin/users')
+@admin_required
 def api_admin_users():
     """Get all users and statistics (admin only)."""
     try:
-        # TODO: Add admin authentication check once OIDC is implemented
         user_stats = user_manager.get_user_stats()
         
         # Get all users with their basic info
