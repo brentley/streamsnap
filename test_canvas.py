@@ -13,6 +13,12 @@ BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "your-slack-bot-token-here")
 
 def test_canvas_creation():
     """Test Canvas creation directly with Slack SDK"""
+    import pytest
+    
+    # Skip test if no valid bot token is provided
+    if not BOT_TOKEN or BOT_TOKEN == "your-slack-bot-token-here" or len(BOT_TOKEN) < 10:
+        pytest.skip("No valid SLACK_BOT_TOKEN provided - skipping Canvas API test")
+    
     client = WebClient(token=BOT_TOKEN)
     
     test_content = """# 📺 Canvas Test - StreamSnap Functionality
@@ -91,6 +97,12 @@ If this works, Canvas is properly configured."""
 
 def test_bot_auth():
     """Test if the bot token is valid and what scopes it has"""
+    import pytest
+    
+    # Skip test if no valid bot token is provided  
+    if not BOT_TOKEN or BOT_TOKEN == "your-slack-bot-token-here" or len(BOT_TOKEN) < 10:
+        pytest.skip("No valid SLACK_BOT_TOKEN provided - skipping auth test")
+        
     client = WebClient(token=BOT_TOKEN)
     
     try:
