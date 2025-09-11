@@ -88,7 +88,6 @@ shutdown_requested = False
 
 def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
     """Register an active processing thread for safe restart tracking."""
-    global active_threads
     active_threads[thread_id] = {
         'thread': thread_obj,
         'url': video_url,
@@ -99,7 +98,6 @@ def register_processing_thread(thread_id, thread_obj, video_url, user_id=None):
 
 def unregister_processing_thread(thread_id):
     """Unregister a completed processing thread."""
-    global active_threads
     if thread_id in active_threads:
         url = active_threads[thread_id]['url']
         del active_threads[thread_id]
@@ -2994,7 +2992,6 @@ Try posting a real YouTube URL to see the full video processing pipeline in acti
 
 def process_video_async(url, config, target_channel=None, message_ts=None, user_id=None):
     """Process video in background thread."""
-    global processing_urls
     clean_url = None
     current_thread = threading.current_thread()
     thread_id = f"{current_thread.ident}_{int(time.time())}"
