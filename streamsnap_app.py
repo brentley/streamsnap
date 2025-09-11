@@ -207,6 +207,36 @@ def health():
     
     return jsonify(health_status), 200
 
+@app.route('/health/watchtower')
+def health_watchtower():
+    """Watchtower-specific health check that prevents updates during active processing."""
+    version_info = load_version_info()
+    processing_status = get_active_processing_status()
+    
+    base_health = {
+        'service': 'streamsnap',
+        'version': version_info.get('version', 'unknown'),
+        'commit': version_info.get('commit', 'unknown'),
+        'uptime': int(time.time() - START_TIME),
+        'active_threads': processing_status['active_count'],
+        'can_safely_restart': processing_status['can_safely_restart']
+    }
+    
+    # Return 503 (Service Unavailable) if there's active processing or shutdown requested
+    # This tells Watchtower to wait before updating
+    if not processing_status['can_safely_restart']:
+        return jsonify({
+            **base_health,
+            'status': 'busy',
+            'message': f'Active processing in progress - update blocked ({processing_status["active_count"]} threads)',
+        }), 503
+    
+    return jsonify({
+        **base_health,
+        'status': 'healthy',
+        'message': 'Safe to update'
+    }), 200
+
 @app.route('/test-canvas-api')
 def test_canvas_api():
     """Test endpoint to debug Canvas API directly (no Slack verification)"""

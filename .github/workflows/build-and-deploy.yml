@@ -45,13 +45,16 @@ jobs:
           # Create a basic test if none exist
           if [ ! -d tests ] && [ ! -f test_*.py ]; then
             mkdir -p tests
-            echo "import pytest
-def test_app_import():
-    try:
-        import streamsnap_app
-        assert True
-    except ImportError:
-        pytest.fail('Could not import main application module')" > tests/test_basic.py
+            cat > tests/test_basic.py << 'EOF'
+          import pytest
+          
+          def test_app_import():
+              try:
+                  import streamsnap_app
+                  assert True
+              except ImportError:
+                  pytest.fail('Could not import main application module')
+          EOF
           fi
           
           # Run tests with coverage if test files exist

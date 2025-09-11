@@ -29,6 +29,10 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.scope=streamsnap"
       - "autoheal.streamsnap=true"
+      - "com.centurylinklabs.watchtower.http-api-update=true"
+      - "com.centurylinklabs.watchtower.http-api-periodic-polls=true"
+      - "com.centurylinklabs.watchtower.lifecycle.pre-check=http://streamsnap:5000/health/watchtower"
+      - "com.centurylinklabs.watchtower.lifecycle.pre-update-timeout=300s"
     volumes:
       - streamsnap_config:/app/config
       - streamsnap_logs:/app/logs
@@ -43,10 +47,12 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_SCOPE=streamsnap
+      - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_LIFECYCLE_HOOKS=true
       - REPO_USER=${REPO_USER}
       - REPO_PASS=${REPO_PASS}
-    # Polls for new images every 30 seconds - no API needed
-    command: --interval 30 --scope streamsnap
+    # Polls for new images every 30 seconds with lifecycle hook support
+    command: --interval 30 --scope streamsnap --http-api-update --lifecycle-hooks
     networks:
       - streamsnap_network
     labels:
