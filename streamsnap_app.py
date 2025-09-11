@@ -107,7 +107,6 @@ def unregister_processing_thread(thread_id):
 
 def get_active_processing_status():
     """Get current processing status for dashboard and safe restart."""
-    global active_threads
     
     # Clean up finished threads
     finished_threads = []
@@ -149,7 +148,6 @@ def request_graceful_shutdown():
 
 def wait_for_safe_restart(max_wait_seconds=300):
     """Wait for all active processing to complete before allowing restart."""
-    global active_threads, shutdown_requested
     
     print("⏳ Waiting for active processing to complete before restart...")
     start_time = time.time()
@@ -2996,7 +2994,7 @@ Try posting a real YouTube URL to see the full video processing pipeline in acti
 
 def process_video_async(url, config, target_channel=None, message_ts=None, user_id=None):
     """Process video in background thread."""
-    global processing_urls, shutdown_requested
+    global processing_urls
     clean_url = None
     current_thread = threading.current_thread()
     thread_id = f"{current_thread.ident}_{int(time.time())}"
@@ -3192,6 +3190,7 @@ def slack_events():
                 text = event.get('text', '')
                 channel = event.get('channel', '')
                 user = event.get('user', '')
+                message_ts = event.get('ts', '')
                 
                 # Early optimization: only process if message contains YouTube URLs or test commands
                 has_youtube_urls = bool(detect_youtube_urls_in_text(text))
