@@ -422,8 +422,15 @@ def get_video_info(url):
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'socket_timeout': 60,  # Add socket timeout
-            'retries': 3,          # Built-in retry mechanism
+            'socket_timeout': 60,
+            'retries': 3,
+            # Anti-bot detection measures
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'sleep_interval': 1,
+            'max_sleep_interval': 5,
+            'sleep_interval_subtitles': 1,
+            # Reduce request frequency
+            'ratelimit': 100000,  # 100KB/s limit
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
