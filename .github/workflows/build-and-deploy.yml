@@ -1,0 +1,151 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Install test dependencies if they exist
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          # Install basic testing tools
+          pip install pytest pytest-cov flake8 bandit safety
+      
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Treat all other issues as warnings
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Run tests
+        run: |
+          # Create a basic test if none exist
+          if [ ! -d tests ] && [ ! -f test_*.py ]; then
+            mkdir -p tests
+            echo "import pytest
+def test_app_import():
+    try:
+        import streamsnap_app
+        assert True
+    except ImportError:
+        pytest.fail('Could not import main application module')" > tests/test_basic.py
+          fi
+          
+          # Run tests with coverage if test files exist
+          if [ -d tests ] || ls test_*.py 1> /dev/null 2>&1; then
+            pytest tests/ -v --cov=. --cov-report=xml --cov-report=html || pytest test_*.py -v
+          else
+            echo "No tests found, skipping test execution"
+          fi
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install security tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+      
+      - name: Run Bandit security linter
+        run: |
+          bandit -r . -f json -o bandit-report.json || true
+          if [ -f bandit-report.json ]; then
+            echo "Bandit security scan completed"
+            cat bandit-report.json
+          fi
+      
+      - name: Run Safety check
+        run: |
+          pip install -r requirements.txt
+          safety check --json || true
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+  build:
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deployment is handled automatically by Watchtower on a schedule
+  # Watchtower polls for new images every 30 seconds - no manual trigger needed

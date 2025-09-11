@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   streamsnap:
-    build: .
+    image: ghcr.io/brentley/streamsnap:latest
     container_name: streamsnap
     restart: unless-stopped
     environment:
@@ -43,13 +43,12 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_INCLUDE_STOPPED=false
       - WATCHTOWER_SCOPE=streamsnap
-      - WATCHTOWER_POLL_INTERVAL=30
+    # Polls for new images every 30 seconds - no API needed
     command: --interval 30 --scope streamsnap
     networks:
       - streamsnap_network
     labels:
       - "com.centurylinklabs.watchtower.scope=streamsnap"
-      - "autoheal.streamsnap=true"
 
   autoheal:
     image: willfarrell/autoheal:latest
@@ -58,20 +57,15 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      # Use project-specific label instead of generic 'autoheal'
       - AUTOHEAL_CONTAINER_LABEL=autoheal.streamsnap
       - AUTOHEAL_INTERVAL=5
       - AUTOHEAL_START_PERIOD=30
       - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10
       - AUTOHEAL_ONLY_MONITOR_RUNNING=true
-      # Only monitor containers in this network
-      - AUTOHEAL_CONTAINER_LABEL_ALL=false
     networks:
       - streamsnap_network
     labels:
       - "com.centurylinklabs.watchtower.scope=streamsnap"
-      # Don't heal the healer itself
-      - "autoheal.streamsnap=false"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -95,10 +89,7 @@ services:
 networks:
   streamsnap_network:
     driver: bridge
-    name: streamsnap_network
 
 volumes:
   streamsnap_config:
-    name: streamsnap_config
   streamsnap_logs:
-    name: streamsnap_logs

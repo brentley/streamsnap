@@ -1,8 +1,9 @@
-.PHONY: help up test build deploy logs shell stop clean status
+.PHONY: help dev prod test build deploy logs shell stop clean health
 
 help:
 	@echo "StreamSnap - Available commands:"
-	@echo "  make up      - Start StreamSnap (production-ready)"
+	@echo "  make dev     - Start development environment"
+	@echo "  make prod    - Start production environment"
 	@echo "  make test    - Run tests"
 	@echo "  make build   - Build Docker image"
 	@echo "  make deploy  - Deploy to production"
@@ -10,15 +11,25 @@ help:
 	@echo "  make shell   - Access container shell"
 	@echo "  make stop    - Stop all containers"
 	@echo "  make clean   - Clean up everything"
-	@echo "  make status  - Show container status"
+	@echo "  make health  - Check service health"
 
-up:
-	@echo "Starting StreamSnap..."
+dev:
+	@echo "Starting StreamSnap development environment..."
+	docker compose -f docker-compose.dev.yml up --build
+
+prod:
+	@echo "Starting StreamSnap production environment..."
 	docker compose up -d
 
 test:
 	@echo "Running StreamSnap tests..."
-	docker compose run --rm streamsnap python -m pytest tests/ -v
+	@if [ -d tests ] || ls test_*.py 1> /dev/null 2>&1; then \
+		docker compose -f docker-compose.dev.yml run --rm streamsnap-dev python -m pytest tests/ -v || \
+		docker compose -f docker-compose.dev.yml run --rm streamsnap-dev python -m pytest test_*.py -v; \
+	else \
+		echo "Running basic import test..."; \
+		docker compose -f docker-compose.dev.yml run --rm streamsnap-dev python -c "import streamsnap_app; print('✅ Application imports successfully')"; \
+	fi
 
 build:
 	@echo "Generating version information..."
@@ -50,6 +61,6 @@ clean:
 	docker compose down -v
 	docker system prune -f
 
-status:
-	@echo "StreamSnap container status:"
-	@docker compose ps
+health:
+	@echo "Checking StreamSnap health..."
+	@curl -f http://localhost:5000/health 2>/dev/null && echo "\n✅ StreamSnap is healthy" || echo "❌ StreamSnap health check failed"

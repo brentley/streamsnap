@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  streamsnap-dev:
+    build: .
+    container_name: streamsnap-dev
+    restart: unless-stopped
+    environment:
+      - GIT_COMMIT=${GIT_COMMIT:-dev}
+      - BUILD_DATE=${BUILD_DATE:-unknown}
+      - VERSION=${VERSION:-dev}
+      - ENVIRONMENT=development
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_MODEL=gpt-4o
+      - AZURE_OPENAI_API_VERSION=2025-01-01-preview
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_CHANNEL_ID=${SLACK_CHANNEL_ID}
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount source for development
+      - .:/app
+      - streamsnap_dev_config:/app/config
+      - streamsnap_dev_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - streamsnap_dev_network
+
+networks:
+  streamsnap_dev_network:
+    driver: bridge
+
+volumes:
+  streamsnap_dev_config:
+  streamsnap_dev_logs:
