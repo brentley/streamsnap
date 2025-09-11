@@ -1,4 +1,5 @@
 from flask import Flask, render_template, jsonify, request, flash, redirect, url_for, session
+from datetime import timedelta
 import os
 import json
 import time
@@ -26,10 +27,11 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-key-change-in-production')
 
 # Session configuration for OIDC
 app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_PERMANENT'] = True  # Allow permanent sessions for OAuth state
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_FILE_THRESHOLD'] = 100
 app.config['SESSION_FILE_DIR'] = '/tmp/flask_session'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)  # Session lifetime
 Session(app)
 
 # Initialize OAuth
@@ -365,12 +367,17 @@ class OIDCAuthManager:
                 name='oidc',
                 client_id=oidc_settings.get('client_id'),
                 client_secret=oidc_settings.get('client_secret'),
-                # Manual endpoint configuration instead of server_metadata_url
-                authorize_url='https://id.visiquate.com/application/o/authorize/',
-                token_url='https://id.visiquate.com/application/o/token/',
-                userinfo_url='https://id.visiquate.com/application/o/userinfo/',
-                jwks_uri='https://id.visiquate.com/application/o/streamsnap/jwks/',
-                issuer='https://id.visiquate.com/application/o/streamsnap/',
+                # Specify server metadata instead of URL to prevent auto-discovery
+                server_metadata={
+                    'issuer': 'https://id.visiquate.com/application/o/streamsnap/',
+                    'authorization_endpoint': 'https://id.visiquate.com/application/o/authorize/',
+                    'token_endpoint': 'https://id.visiquate.com/application/o/token/',
+                    'userinfo_endpoint': 'https://id.visiquate.com/application/o/userinfo/',
+                    'jwks_uri': 'https://id.visiquate.com/application/o/streamsnap/jwks/',
+                    'response_types_supported': ['code'],
+                    'subject_types_supported': ['public'],
+                    'id_token_signing_alg_values_supported': ['RS256']
+                },
                 client_kwargs={
                     'scope': ' '.join(oidc_settings.get('scopes', ['openid', 'email', 'profile']))
                 }
@@ -813,7 +820,7 @@ def debug_channels():
 # Authentication routes
 @app.route('/auth/login')
 def auth_login():
-    """Initiate OIDC login flow."""
+    """Initiate OIDC login flow using Authlib integration."""
     if not auth_manager.is_enabled():
         return redirect(url_for('index'))
     
@@ -821,17 +828,19 @@ def auth_login():
         return redirect(url_for('dashboard'))
     
     try:
-        # Use configured redirect URI instead of constructing from request
-        config = load_config()
-        redirect_uri = config.get('oidc_settings', {}).get('redirect_uri') or (request.url_root.rstrip('/') + '/auth/callback')
-        auth_url = auth_manager.get_auth_url(redirect_uri)
-        
-        if not auth_url:
+        auth_manager._ensure_initialized()
+        if not auth_manager.oauth_client:
             return render_template('error.html', 
                                  message='OIDC authentication not properly configured',
                                  status=500), 500
         
-        return redirect(auth_url['url'])
+        # Use configured redirect URI
+        config = load_config()
+        redirect_uri = config.get('oidc_settings', {}).get('redirect_uri')
+        
+        # Let Authlib handle the OAuth flow automatically
+        return auth_manager.oauth_client.authorize_redirect(redirect_uri)
+        
     except Exception as e:
         print(f"⚠️ Error initiating OIDC login: {e}")
         return render_template('error.html', 
@@ -840,29 +849,30 @@ def auth_login():
 
 @app.route('/auth/callback')
 def auth_callback():
-    """Handle OIDC callback and create session."""
+    """Handle OIDC callback and create session using Authlib integration."""
     if not auth_manager.is_enabled():
         return redirect(url_for('index'))
     
-    code = request.args.get('code')
-    if not code:
-        return render_template('error.html', 
-                             message='Authentication failed - no authorization code received',
-                             status=400), 400
-    
     try:
-        # Use configured redirect URI instead of constructing from request
-        config = load_config()
-        redirect_uri = config.get('oidc_settings', {}).get('redirect_uri') or (request.url_root.rstrip('/') + '/auth/callback')
-        auth_result = auth_manager.exchange_code(code, redirect_uri)
+        auth_manager._ensure_initialized()
+        if not auth_manager.oauth_client:
+            return render_template('error.html', 
+                                 message='OIDC authentication not properly configured',
+                                 status=500), 500
         
-        if not auth_result:
+        # Let Authlib handle the token exchange and state verification automatically
+        token = auth_manager.oauth_client.authorize_access_token()
+        
+        if not token:
             return render_template('error.html', 
                                  message='Authentication failed - could not exchange code',
                                  status=400), 400
         
-        user_info = auth_result['user_info']
-        token_info = auth_result['token']
+        # Get user info from the token
+        user_info = token.get('userinfo')
+        if not user_info and 'access_token' in token:
+            # Try to get user info from userinfo endpoint
+            user_info = auth_manager.oauth_client.parse_id_token(token)
         
         if not user_info:
             return render_template('error.html', 
